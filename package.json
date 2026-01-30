@@ -34,12 +34,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/k0cjh/openhamclock.git"
+    "url": "https://github.com/accius/openhamclock.git"
   },
   "bugs": {
-    "url": "https://github.com/k0cjh/openhamclock/issues"
+    "url": "https://github.com/accius/openhamclock/issues"
   },
-  "homepage": "https://github.com/k0cjh/openhamclock#readme",
+  "homepage": "https://github.com/accius/openhamclock#readme",
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",

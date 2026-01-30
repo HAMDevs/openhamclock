@@ -5,7 +5,7 @@
 # Quick installation script for Linux and macOS systems
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/k0cjh/openhamclock/main/scripts/setup-linux.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/accius/openhamclock/main/scripts/setup-linux.sh | bash
 #
 # Or manually:
 #   chmod +x setup-linux.sh
@@ -69,7 +69,7 @@ setup_repo() {
         git pull
     else
         echo "Cloning repository..."
-        git clone https://github.com/k0cjh/openhamclock.git "$INSTALL_DIR"
+        git clone https://github.com/accius/openhamclock.git "$INSTALL_DIR"
         cd "$INSTALL_DIR"
     fi
     

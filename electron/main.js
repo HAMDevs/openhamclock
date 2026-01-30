@@ -192,14 +192,14 @@ function createMenu() {
         {
           label: 'GitHub Repository',
           click: () => {
-            shell.openExternal('https://github.com/k0cjh/openhamclock');
+            shell.openExternal('https://github.com/accius/openhamclock');
           }
         },
         { type: 'separator' },
         {
           label: 'Report Issue',
           click: () => {
-            shell.openExternal('https://github.com/k0cjh/openhamclock/issues/new');
+            shell.openExternal('https://github.com/accius/openhamclock/issues/new');
           }
         },
         { type: 'separator' },

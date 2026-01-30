@@ -58,7 +58,7 @@ function Setup-Repository {
     }
     else {
         Write-Host "Cloning repository..."
-        git clone https://github.com/k0cjh/openhamclock.git $InstallDir
+        git clone https://github.com/accius/openhamclock.git $InstallDir
         Set-Location $InstallDir
     }
     

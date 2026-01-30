@@ -75,7 +75,7 @@ OpenHamClock is a spiritual successor to the beloved HamClock application create
 
 ```bash
 # Clone the repository
-git clone https://github.com/k0cjh/openhamclock.git
+git clone https://github.com/accius/openhamclock.git
 cd openhamclock
 
 # Install dependencies
@@ -91,19 +91,19 @@ npm start
 
 **Linux/macOS:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/k0cjh/openhamclock/main/scripts/setup-linux.sh | bash
+curl -fsSL https://raw.githubusercontent.com/accius/openhamclock/main/scripts/setup-linux.sh | bash
 ```
 
 **Windows (PowerShell as Admin):**
 ```powershell
-Set-ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/k0cjh/openhamclock/main/scripts/setup-windows.ps1'))
+Set-ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/accius/openhamclock/main/scripts/setup-windows.ps1'))
 ```
 
 ### 🍓 Raspberry Pi
 
 ```bash
 # Download and run the Pi setup script
-curl -fsSL https://raw.githubusercontent.com/k0cjh/openhamclock/main/scripts/setup-pi.sh -o setup-pi.sh
+curl -fsSL https://raw.githubusercontent.com/accius/openhamclock/main/scripts/setup-pi.sh -o setup-pi.sh
 chmod +x setup-pi.sh
 
 # Standard installation
@@ -199,7 +199,7 @@ const CONFIG = {
 
 ```bash
 # Clone and setup
-git clone https://github.com/k0cjh/openhamclock.git
+git clone https://github.com/accius/openhamclock.git
 cd openhamclock
 npm install
 
@@ -275,8 +275,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Contact
 
-- **GitHub Issues**: [Report bugs or request features](https://github.com/k0cjh/openhamclock/issues)
-- **Discussions**: [Join the conversation](https://github.com/k0cjh/openhamclock/discussions)
+- **Email**: chris@cjhlighting.com
+- **GitHub Issues**: [Report bugs or request features](https://github.com/accius/openhamclock/issues)
+- **Discussions**: [Join the conversation](https://github.com/accius/openhamclock/discussions)
 
 ---
 

@@ -25,7 +25,7 @@ This project and everyone participating in it is governed by our [Code of Conduc
 
 ### Good First Issues
 
-Looking for something to work on? Check out issues labeled [`good first issue`](https://github.com/k0cjh/openhamclock/labels/good%20first%20issue) - these are great for newcomers!
+Looking for something to work on? Check out issues labeled [`good first issue`](https://github.com/accius/openhamclock/labels/good%20first%20issue) - these are great for newcomers!
 
 ## How Can I Contribute?
 
@@ -98,7 +98,7 @@ git clone https://github.com/YOUR_USERNAME/openhamclock.git
 cd openhamclock
 
 # Add upstream remote
-git remote add upstream https://github.com/k0cjh/openhamclock.git
+git remote add upstream https://github.com/accius/openhamclock.git
 
 # Install dependencies
 npm install
@@ -209,8 +209,8 @@ Contributors will be recognized in:
 
 Feel free to:
 - Open a GitHub Discussion
+- Email chris@cjhlighting.com
 - Reach out to maintainers
-- Join the amateur radio community discussions
 
 ---
 
