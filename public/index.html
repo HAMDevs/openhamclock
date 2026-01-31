@@ -668,25 +668,31 @@
       return { data, loading };
     };
 
-    const useDXCluster = () => {
+    const useDXCluster = (source = 'auto') => {
       const [data, setData] = useState([]);
       const [loading, setLoading] = useState(true);
+      const [activeSource, setActiveSource] = useState('');
 
       useEffect(() => {
         const fetchDX = async () => {
           try {
-            // Use our proxy endpoint (works when running via server.js)
-            const response = await fetch('/api/dxcluster/spots');
+            // Use our proxy endpoint with source parameter
+            const response = await fetch(`/api/dxcluster/spots?source=${source}`);
             
             if (response.ok) {
               const spots = await response.json();
               if (spots && spots.length > 0) {
+                // Track the active source from the first spot
+                if (spots[0].source) {
+                  setActiveSource(spots[0].source);
+                }
                 setData(spots.slice(0, 15).map(s => ({
                   freq: s.freq || (s.frequency ? (parseFloat(s.frequency) / 1000).toFixed(3) : '0.000'),
                   call: s.call || s.dx_call || 'UNKNOWN',
                   comment: s.comment || s.info || '',
                   time: s.time || new Date().toISOString().substr(11, 5) + 'z',
-                  spotter: s.spotter || ''
+                  spotter: s.spotter || '',
+                  source: s.source || ''
                 })));
               } else {
                 setData([{
@@ -696,6 +702,7 @@
                   time: '--:--z',
                   spotter: ''
                 }]);
+                setActiveSource('');
               }
             } else {
               setData([{
@@ -705,6 +712,7 @@
                 time: '--:--z',
                 spotter: ''
               }]);
+              setActiveSource('');
             }
           } catch (err) { 
             console.error('DX Cluster error:', err);
@@ -715,6 +723,7 @@
               time: '--:--z',
               spotter: ''
             }]);
+            setActiveSource('');
           } finally {
             setLoading(false);
           }
@@ -722,9 +731,9 @@
         fetchDX();
         const interval = setInterval(fetchDX, DEFAULT_CONFIG.refreshIntervals.dxCluster);
         return () => clearInterval(interval);
-      }, []);
+      }, [source]);
 
-      return { data, loading };
+      return { data, loading, activeSource };
     };
 
     // ============================================
@@ -1883,12 +1892,13 @@
       );
     };
 
-    const DXClusterPanel = ({ spots, loading }) => (
+    const DXClusterPanel = ({ spots, loading, activeSource }) => (
       <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '20px', backdropFilter: 'blur(10px)', maxHeight: '280px', overflow: 'hidden' }}>
         <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--accent-cyan)', letterSpacing: '2px', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span>🌐 DX CLUSTER</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {loading && <div className="loading-spinner" />}
+            {activeSource && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{activeSource}</span>}
             <span style={{ fontSize: '12px', color: 'var(--accent-green)' }}>● LIVE</span>
           </div>
         </div>
@@ -2193,7 +2203,10 @@
           <div style={{ ...panelStyle, gridRow: '2', gridColumn: '3', display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto' }}>
             {/* DX Cluster */}
             <div>
-              <div style={{ ...labelStyle, marginBottom: '8px' }}>🌐 DX CLUSTER <span style={{ color: 'var(--accent-green)', fontSize: '12px' }}>● LIVE</span></div>
+              <div style={{ ...labelStyle, marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>🌐 DX CLUSTER <span style={{ color: 'var(--accent-green)', fontSize: '12px' }}>● LIVE</span></span>
+                {dxCluster.activeSource && <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: '400' }}>{dxCluster.activeSource}</span>}
+              </div>
               <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
                 {dxCluster.data.slice(0, 8).map((s, i) => (
                   <div key={i} style={{ padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: '12px' }}>
@@ -2316,6 +2329,7 @@
       const [useGeolocation, setUseGeolocation] = useState(false);
       const [theme, setTheme] = useState(config.theme || 'dark');
       const [layout, setLayout] = useState(config.layout || 'modern');
+      const [dxClusterSource, setDxClusterSource] = useState(config.dxClusterSource || 'auto');
 
       // Calculate grid square from lat/lon
       useEffect(() => {
@@ -2372,7 +2386,8 @@
           callsign: callsign.toUpperCase().trim(),
           location: { lat: latNum, lon: lonNum },
           theme: theme,
-          layout: layout
+          layout: layout,
+          dxClusterSource: dxClusterSource
         };
         
         onSave(newConfig);
@@ -2566,6 +2581,34 @@
               </p>
             </div>
 
+            {/* DX Cluster Source Selection */}
+            <div style={{ marginBottom: '24px' }}>
+              <label style={labelStyle}>DX Cluster Source</label>
+              <select
+                value={dxClusterSource}
+                onChange={(e) => setDxClusterSource(e.target.value)}
+                style={{
+                  width: '100%', padding: '12px 16px', background: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-color)', borderRadius: '6px',
+                  color: 'var(--accent-cyan)', fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: '14px', outline: 'none', cursor: 'pointer'
+                }}
+              >
+                <option value="auto">Auto (Best Available)</option>
+                <option value="hamqth">HamQTH</option>
+                <option value="dxheat">DXHeat</option>
+                <option value="dxsummit">DX Summit</option>
+                <option value="dxspider">DX Spider (G6NHU)</option>
+              </select>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
+                {dxClusterSource === 'auto' && '→ Automatically selects the best available source'}
+                {dxClusterSource === 'hamqth' && '→ HamQTH.com DX Cluster feed'}
+                {dxClusterSource === 'dxheat' && '→ DXHeat.com real-time cluster'}
+                {dxClusterSource === 'dxsummit' && '→ DXSummit.fi cluster (may be slow)'}
+                {dxClusterSource === 'dxspider' && '→ G6NHU-2 DX Spider node (dxspider.co.uk)'}
+              </p>
+            </div>
+
             {/* Buttons */}
             <div style={{ display: 'flex', gap: '12px' }}>
               <button
@@ -2637,7 +2680,7 @@
       const spaceWeather = useSpaceWeather();
       const bandConditions = useBandConditions(spaceWeather.data);
       const potaSpots = usePOTASpots();
-      const dxCluster = useDXCluster();
+      const dxCluster = useDXCluster(config.dxClusterSource || 'auto');
       const contests = useContests();
       const propagation = usePropagation(config.location, dxLocation);
       const mySpots = useMySpots(config.callsign);
@@ -2884,8 +2927,9 @@
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflow: 'hidden' }}>
             {/* DX Cluster - Compact */}
             <div className="panel" style={{ padding: '10px', flex: '1 1 auto', overflow: 'hidden', minHeight: 0 }}>
-              <div style={{ fontSize: '12px', color: 'var(--accent-green)', fontWeight: '700', marginBottom: '6px' }}>
-                🌐 DX CLUSTER <span style={{ color: 'var(--accent-green)', fontSize: '12px' }}>● LIVE</span>
+              <div style={{ fontSize: '12px', color: 'var(--accent-green)', fontWeight: '700', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>🌐 DX CLUSTER <span style={{ color: 'var(--accent-green)', fontSize: '12px' }}>● LIVE</span></span>
+                {dxCluster.activeSource && <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: '400' }}>{dxCluster.activeSource}</span>}
               </div>
               <div style={{ overflow: 'auto', maxHeight: 'calc(100% - 20px)' }}>
                 {dxCluster.data.slice(0, 8).map((s, i) => (
