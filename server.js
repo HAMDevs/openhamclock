@@ -67,6 +67,84 @@ app.get('/api/noaa/sunspots', async (req, res) => {
   }
 });
 
+// Solar Indices with History and Kp Forecast
+app.get('/api/solar-indices', async (req, res) => {
+  try {
+    const [fluxRes, kIndexRes, kForecastRes, sunspotRes] = await Promise.allSettled([
+      fetch('https://services.swpc.noaa.gov/json/f107_cm_flux.json'),
+      fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'),
+      fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json'),
+      fetch('https://services.swpc.noaa.gov/json/solar-cycle/observed-solar-cycle-indices.json')
+    ]);
+
+    const result = {
+      sfi: { current: null, history: [] },
+      kp: { current: null, history: [], forecast: [] },
+      ssn: { current: null, history: [] },
+      timestamp: new Date().toISOString()
+    };
+
+    // Process SFI data (last 30 days)
+    if (fluxRes.status === 'fulfilled' && fluxRes.value.ok) {
+      const data = await fluxRes.value.json();
+      if (data?.length) {
+        // Get last 30 entries
+        const recent = data.slice(-30);
+        result.sfi.history = recent.map(d => ({
+          date: d.time_tag || d.date,
+          value: Math.round(d.flux || d.value || 0)
+        }));
+        result.sfi.current = result.sfi.history[result.sfi.history.length - 1]?.value || null;
+      }
+    }
+
+    // Process Kp history (last 3 days, data comes in 3-hour intervals)
+    if (kIndexRes.status === 'fulfilled' && kIndexRes.value.ok) {
+      const data = await kIndexRes.value.json();
+      if (data?.length > 1) {
+        // Skip header row, get last 24 entries (3 days)
+        const recent = data.slice(1).slice(-24);
+        result.kp.history = recent.map(d => ({
+          time: d[0],
+          value: parseFloat(d[1]) || 0
+        }));
+        result.kp.current = result.kp.history[result.kp.history.length - 1]?.value || null;
+      }
+    }
+
+    // Process Kp forecast
+    if (kForecastRes.status === 'fulfilled' && kForecastRes.value.ok) {
+      const data = await kForecastRes.value.json();
+      if (data?.length > 1) {
+        // Skip header row
+        result.kp.forecast = data.slice(1).map(d => ({
+          time: d[0],
+          value: parseFloat(d[1]) || 0
+        }));
+      }
+    }
+
+    // Process Sunspot data (last 12 months)
+    if (sunspotRes.status === 'fulfilled' && sunspotRes.value.ok) {
+      const data = await sunspotRes.value.json();
+      if (data?.length) {
+        // Get last 12 entries (monthly data)
+        const recent = data.slice(-12);
+        result.ssn.history = recent.map(d => ({
+          date: `${d['time-tag'] || d.time_tag || ''}`,
+          value: Math.round(d.ssn || 0)
+        }));
+        result.ssn.current = result.ssn.history[result.ssn.history.length - 1]?.value || null;
+      }
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Solar Indices API error:', error.message);
+    res.status(500).json({ error: 'Failed to fetch solar indices' });
+  }
+});
+
 // NOAA Space Weather - X-Ray Flux
 app.get('/api/noaa/xray', async (req, res) => {
   try {

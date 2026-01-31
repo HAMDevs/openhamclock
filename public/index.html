@@ -552,6 +552,34 @@
       return { data, loading };
     };
 
+    // Solar Indices with History and Kp Forecast Hook
+    const useSolarIndices = () => {
+      const [data, setData] = useState(null);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        const fetchData = async () => {
+          try {
+            const response = await fetch('/api/solar-indices');
+            if (response.ok) {
+              const result = await response.json();
+              setData(result);
+            }
+          } catch (err) {
+            console.error('Solar indices error:', err);
+          } finally {
+            setLoading(false);
+          }
+        };
+        fetchData();
+        // Refresh every 15 minutes
+        const interval = setInterval(fetchData, 15 * 60 * 1000);
+        return () => clearInterval(interval);
+      }, []);
+
+      return { data, loading };
+    };
+
     const useBandConditions = (spaceWeather) => {
       const [data, setData] = useState([]);
       const [loading, setLoading] = useState(true);
@@ -2398,12 +2426,204 @@
     };
 
     // ============================================
+    // SOLAR INDICES PANEL
+    // ============================================
+    const SolarIndicesPanel = ({ data, loading }) => {
+      if (loading || !data) {
+        return (
+          <div className="panel">
+            <div className="panel-header">☀️ Solar Indices</div>
+            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              Loading solar data...
+            </div>
+          </div>
+        );
+      }
+
+      const { sfi, kp, ssn } = data;
+
+      // Get Kp color based on value
+      const getKpColor = (value) => {
+        if (value >= 7) return '#ff0000'; // Severe storm
+        if (value >= 5) return '#ff6600'; // Storm
+        if (value >= 4) return '#ffcc00'; // Active
+        if (value >= 3) return '#88cc00'; // Unsettled
+        return '#00ff88'; // Quiet
+      };
+
+      // Get Kp label
+      const getKpLabel = (value) => {
+        if (value >= 7) return 'SEVERE';
+        if (value >= 5) return 'STORM';
+        if (value >= 4) return 'ACTIVE';
+        if (value >= 3) return 'UNSETTLED';
+        return 'QUIET';
+      };
+
+      // Mini sparkline chart component
+      const Sparkline = ({ data, color, height = 30, showForecast = false, forecastData = [] }) => {
+        if (!data || data.length === 0) return null;
+        
+        const allData = showForecast ? [...data, ...forecastData] : data;
+        const values = allData.map(d => d.value);
+        const max = Math.max(...values, 1);
+        const min = Math.min(...values, 0);
+        const range = max - min || 1;
+        
+        const width = 100;
+        const points = allData.map((d, i) => {
+          const x = (i / (allData.length - 1)) * width;
+          const y = height - ((d.value - min) / range) * height;
+          return `${x},${y}`;
+        }).join(' ');
+        
+        // Split point between history and forecast
+        const historyEndIndex = data.length - 1;
+        const historyPoints = data.map((d, i) => {
+          const x = (i / (allData.length - 1)) * width;
+          const y = height - ((d.value - min) / range) * height;
+          return `${x},${y}`;
+        }).join(' ');
+        
+        const forecastPoints = showForecast && forecastData.length > 0 ? 
+          [data[data.length - 1], ...forecastData].map((d, i) => {
+            const x = ((historyEndIndex + i) / (allData.length - 1)) * width;
+            const y = height - ((d.value - min) / range) * height;
+            return `${x},${y}`;
+          }).join(' ') : '';
+
+        return (
+          <svg width={width} height={height} style={{ display: 'block' }}>
+            {/* History line */}
+            <polyline
+              points={historyPoints}
+              fill="none"
+              stroke={color}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {/* Forecast line (dashed) */}
+            {showForecast && forecastPoints && (
+              <polyline
+                points={forecastPoints}
+                fill="none"
+                stroke={color}
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeDasharray="4,2"
+                opacity="0.6"
+              />
+            )}
+          </svg>
+        );
+      };
+
+      // Mini bar chart for Kp
+      const KpBars = ({ history, forecast }) => {
+        const allData = [...(history || []), ...(forecast || []).slice(0, 8)];
+        if (allData.length === 0) return null;
+        
+        const barWidth = 100 / allData.length;
+        const height = 35;
+        
+        return (
+          <svg width={100} height={height} style={{ display: 'block' }}>
+            {allData.map((d, i) => {
+              const isForecast = i >= (history?.length || 0);
+              const barHeight = (d.value / 9) * height;
+              return (
+                <rect
+                  key={i}
+                  x={i * barWidth + 1}
+                  y={height - barHeight}
+                  width={barWidth - 2}
+                  height={barHeight}
+                  fill={getKpColor(d.value)}
+                  opacity={isForecast ? 0.5 : 1}
+                  rx="1"
+                />
+              );
+            })}
+            {/* Divider line between history and forecast */}
+            {forecast && forecast.length > 0 && history && (
+              <line
+                x1={(history.length / allData.length) * 100}
+                y1="0"
+                x2={(history.length / allData.length) * 100}
+                y2={height}
+                stroke="#666"
+                strokeWidth="1"
+                strokeDasharray="2,2"
+              />
+            )}
+          </svg>
+        );
+      };
+
+      return (
+        <div className="panel" style={{ padding: '12px' }}>
+          <div className="panel-header" style={{ marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>☀️ Solar Indices</span>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>NOAA/SWPC</span>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+            {/* SFI */}
+            <div style={{ background: 'var(--bg-tertiary)', borderRadius: '6px', padding: '8px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>SFI</div>
+              <div style={{ fontSize: '20px', fontWeight: '700', color: '#ff8800', fontFamily: 'Orbitron, monospace' }}>
+                {sfi.current || '--'}
+              </div>
+              <div style={{ marginTop: '6px' }}>
+                <Sparkline data={sfi.history} color="#ff8800" height={25} />
+              </div>
+              <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '2px' }}>30 day history</div>
+            </div>
+            
+            {/* SSN */}
+            <div style={{ background: 'var(--bg-tertiary)', borderRadius: '6px', padding: '8px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>Sunspots</div>
+              <div style={{ fontSize: '20px', fontWeight: '700', color: '#ffcc00', fontFamily: 'Orbitron, monospace' }}>
+                {ssn.current || '--'}
+              </div>
+              <div style={{ marginTop: '6px' }}>
+                <Sparkline data={ssn.history} color="#ffcc00" height={25} />
+              </div>
+              <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '2px' }}>12 month history</div>
+            </div>
+            
+            {/* Kp Index */}
+            <div style={{ background: 'var(--bg-tertiary)', borderRadius: '6px', padding: '8px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginBottom: '4px' }}>Kp Index</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                <span style={{ fontSize: '20px', fontWeight: '700', color: getKpColor(kp.current), fontFamily: 'Orbitron, monospace' }}>
+                  {kp.current !== null ? kp.current.toFixed(1) : '--'}
+                </span>
+                <span style={{ fontSize: '10px', color: getKpColor(kp.current) }}>
+                  {kp.current !== null ? getKpLabel(kp.current) : ''}
+                </span>
+              </div>
+              <div style={{ marginTop: '6px' }}>
+                <KpBars history={kp.history} forecast={kp.forecast} />
+              </div>
+              <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                3 day history + forecast
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // ============================================
     // LEGACY LAYOUT (Classic HamClock Style)
     // ============================================
     const LegacyLayout = ({ 
       config, currentTime, utcTime, utcDate, localTime, localDate,
       deGrid, dxGrid, deSunTimes, dxSunTimes, dxLocation, onDXChange,
-      spaceWeather, bandConditions, potaSpots, dxCluster, dxPaths, contests, propagation, mySpots, satellites,
+      spaceWeather, bandConditions, solarIndices, potaSpots, dxCluster, dxPaths, contests, propagation, mySpots, satellites,
       localWeather, use12Hour, onTimeFormatToggle,
       onSettingsClick, onFullscreenToggle, isFullscreen,
       mapLayers, toggleDXPaths, togglePOTA, toggleSatellites
@@ -2487,27 +2707,107 @@
             </div>
           </div>
 
-          {/* TOP RIGHT - Space Weather */}
-          <div style={{ ...panelStyle, gridRow: '1', gridColumn: '3' }}>
-            <div style={labelStyle}>☀ SOLAR CONDITIONS</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px' }}>
-              <div>
-                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>SFI</div>
-                <div style={{ fontSize: '18px', color: 'var(--accent-amber)', fontWeight: '700' }}>{spaceWeather.data?.solarFlux || '--'}</div>
+          {/* TOP RIGHT - Solar Indices with Mini Charts */}
+          <div style={{ ...panelStyle, gridRow: '1', gridColumn: '3', padding: '6px 10px' }}>
+            <div style={{ ...labelStyle, fontSize: '10px', marginBottom: '4px' }}>☀ SOLAR INDICES</div>
+            {solarIndices.data ? (
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch' }}>
+                {/* SFI */}
+                <div style={{ flex: 1, background: 'var(--bg-tertiary)', borderRadius: '4px', padding: '4px 6px' }}>
+                  <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>SFI</div>
+                  <div style={{ fontSize: '16px', color: '#ff8800', fontWeight: '700', fontFamily: 'Orbitron, monospace' }}>
+                    {solarIndices.data.sfi?.current || '--'}
+                  </div>
+                  {solarIndices.data.sfi?.history?.length > 0 && (
+                    <svg width="50" height="18" style={{ display: 'block', marginTop: '2px' }}>
+                      {(() => {
+                        const data = solarIndices.data.sfi.history.slice(-14);
+                        const values = data.map(d => d.value);
+                        const max = Math.max(...values, 1);
+                        const min = Math.min(...values, 0);
+                        const range = max - min || 1;
+                        const points = data.map((d, i) => {
+                          const x = (i / (data.length - 1)) * 50;
+                          const y = 18 - ((d.value - min) / range) * 18;
+                          return `${x},${y}`;
+                        }).join(' ');
+                        return <polyline points={points} fill="none" stroke="#ff8800" strokeWidth="1.5" />;
+                      })()}
+                    </svg>
+                  )}
+                </div>
+                {/* SSN */}
+                <div style={{ flex: 1, background: 'var(--bg-tertiary)', borderRadius: '4px', padding: '4px 6px' }}>
+                  <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>SSN</div>
+                  <div style={{ fontSize: '16px', color: '#ffcc00', fontWeight: '700', fontFamily: 'Orbitron, monospace' }}>
+                    {solarIndices.data.ssn?.current || '--'}
+                  </div>
+                  {solarIndices.data.ssn?.history?.length > 0 && (
+                    <svg width="50" height="18" style={{ display: 'block', marginTop: '2px' }}>
+                      {(() => {
+                        const data = solarIndices.data.ssn.history;
+                        const values = data.map(d => d.value);
+                        const max = Math.max(...values, 1);
+                        const min = Math.min(...values, 0);
+                        const range = max - min || 1;
+                        const points = data.map((d, i) => {
+                          const x = (i / (data.length - 1)) * 50;
+                          const y = 18 - ((d.value - min) / range) * 18;
+                          return `${x},${y}`;
+                        }).join(' ');
+                        return <polyline points={points} fill="none" stroke="#ffcc00" strokeWidth="1.5" />;
+                      })()}
+                    </svg>
+                  )}
+                </div>
+                {/* Kp */}
+                <div style={{ flex: 1, background: 'var(--bg-tertiary)', borderRadius: '4px', padding: '4px 6px' }}>
+                  <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>Kp</div>
+                  <div style={{ fontSize: '16px', fontWeight: '700', fontFamily: 'Orbitron, monospace',
+                    color: solarIndices.data.kp?.current >= 5 ? '#ff6600' : solarIndices.data.kp?.current >= 4 ? '#ffcc00' : '#00ff88'
+                  }}>
+                    {solarIndices.data.kp?.current?.toFixed(1) || '--'}
+                  </div>
+                  {solarIndices.data.kp?.history?.length > 0 && (
+                    <svg width="50" height="18" style={{ display: 'block', marginTop: '2px' }}>
+                      {(() => {
+                        const hist = solarIndices.data.kp.history.slice(-12);
+                        const forecast = (solarIndices.data.kp.forecast || []).slice(0, 4);
+                        const allData = [...hist, ...forecast];
+                        const barWidth = 50 / allData.length;
+                        return allData.map((d, i) => {
+                          const isForecast = i >= hist.length;
+                          const barHeight = (d.value / 9) * 18;
+                          const color = d.value >= 5 ? '#ff6600' : d.value >= 4 ? '#ffcc00' : '#00ff88';
+                          return (
+                            <rect
+                              key={i}
+                              x={i * barWidth}
+                              y={18 - barHeight}
+                              width={barWidth - 1}
+                              height={barHeight}
+                              fill={color}
+                              opacity={isForecast ? 0.4 : 0.8}
+                            />
+                          );
+                        });
+                      })()}
+                    </svg>
+                  )}
+                </div>
               </div>
-              <div>
-                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>K-Index</div>
-                <div style={{ fontSize: '18px', color: parseInt(spaceWeather.data?.kIndex) > 4 ? 'var(--accent-red)' : 'var(--accent-green)', fontWeight: '700' }}>{spaceWeather.data?.kIndex || '-'}</div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px' }}>
+                <div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>SFI</div>
+                  <div style={{ fontSize: '18px', color: 'var(--accent-amber)', fontWeight: '700' }}>{spaceWeather.data?.solarFlux || '--'}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Kp</div>
+                  <div style={{ fontSize: '18px', color: parseInt(spaceWeather.data?.kIndex) > 4 ? 'var(--accent-red)' : 'var(--accent-green)', fontWeight: '700' }}>{spaceWeather.data?.kIndex || '-'}</div>
+                </div>
               </div>
-              <div>
-                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>SSN</div>
-                <div style={{ fontSize: '18px', color: 'var(--text-primary)', fontWeight: '700' }}>{spaceWeather.data?.sunspotNumber || '--'}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Conditions</div>
-                <div style={{ fontSize: '12px', color: spaceWeather.data?.conditions === 'GOOD' || spaceWeather.data?.conditions === 'EXCELLENT' ? 'var(--accent-green)' : 'var(--accent-amber)', fontWeight: '700' }}>{spaceWeather.data?.conditions || '--'}</div>
-              </div>
-            </div>
+            )}
           </div>
 
           {/* LEFT SIDEBAR - DE/DX Info */}
@@ -3192,6 +3492,7 @@
 
       const spaceWeather = useSpaceWeather();
       const bandConditions = useBandConditions(spaceWeather.data);
+      const solarIndices = useSolarIndices();
       const potaSpots = usePOTASpots();
       const dxCluster = useDXCluster(config.dxClusterSource || 'auto');
       const dxPaths = useDXPaths();
@@ -3271,6 +3572,7 @@
               onDXChange={handleDXChange}
               spaceWeather={spaceWeather}
               bandConditions={bandConditions}
+              solarIndices={solarIndices}
               potaSpots={potaSpots}
               dxCluster={dxCluster}
               dxPaths={dxPaths}
@@ -3466,6 +3768,9 @@
             
             {/* VOACAP Propagation - Toggleable */}
             <PropagationPanel propagation={propagation.data} loading={propagation.loading} />
+            
+            {/* Solar Indices with History */}
+            <SolarIndicesPanel data={solarIndices.data} loading={solarIndices.loading} />
           </div>
           
           {/* CENTER - MAP */}
