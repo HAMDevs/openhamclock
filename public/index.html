@@ -2571,18 +2571,20 @@
               if (!pathPoints || !Array.isArray(pathPoints) || pathPoints.length === 0) return;
               
               // Use different colors based on band (derived from frequency)
+              // Include text color for readability (dark text on light backgrounds)
               const freq = parseFloat(path.freq);
-              let color = '#4488ff'; // Default blue
-              if (freq >= 1.8 && freq < 2) color = '#ff6666';      // 160m - red
-              else if (freq >= 3.5 && freq < 4) color = '#ff9966'; // 80m - orange
-              else if (freq >= 7 && freq < 7.5) color = '#ffcc66'; // 40m - yellow
-              else if (freq >= 10 && freq < 10.5) color = '#99ff66'; // 30m - lime
-              else if (freq >= 14 && freq < 14.5) color = '#66ff99'; // 20m - green
-              else if (freq >= 18 && freq < 18.5) color = '#66ffcc'; // 17m - teal
-              else if (freq >= 21 && freq < 21.5) color = '#66ccff'; // 15m - cyan
-              else if (freq >= 24 && freq < 25) color = '#6699ff'; // 12m - blue
-              else if (freq >= 28 && freq < 30) color = '#9966ff'; // 10m - purple
-              else if (freq >= 50 && freq < 54) color = '#ff66ff'; // 6m - magenta
+              let color = '#4488ff';
+              let textColor = '#000'; // Default dark text
+              if (freq >= 1.8 && freq < 2) { color = '#ff6666'; textColor = '#000'; }      // 160m - red
+              else if (freq >= 3.5 && freq < 4) { color = '#ff9966'; textColor = '#000'; } // 80m - orange
+              else if (freq >= 7 && freq < 7.5) { color = '#ffcc66'; textColor = '#000'; } // 40m - yellow
+              else if (freq >= 10 && freq < 10.5) { color = '#99ff66'; textColor = '#000'; } // 30m - lime
+              else if (freq >= 14 && freq < 14.5) { color = '#66ff99'; textColor = '#000'; } // 20m - green
+              else if (freq >= 18 && freq < 18.5) { color = '#66ffcc'; textColor = '#000'; } // 17m - teal
+              else if (freq >= 21 && freq < 21.5) { color = '#66ccff'; textColor = '#000'; } // 15m - cyan
+              else if (freq >= 24 && freq < 25) { color = '#6699ff'; textColor = '#fff'; } // 12m - blue (darker, white text)
+              else if (freq >= 28 && freq < 30) { color = '#9966ff'; textColor = '#fff'; } // 10m - purple (darker, white text)
+              else if (freq >= 50 && freq < 54) { color = '#ff66ff'; textColor = '#000'; } // 6m - magenta
               
               // Check if this path is hovered
               const isHovered = hoveredSpot && hoveredSpot.call === path.dxCall && 
@@ -2640,19 +2642,43 @@
                 fillOpacity: isHovered ? 1 : 0.9
               })
                 .bindPopup(dxPopupContent)
-                .bindTooltip(path.dxCall, { 
-                  permanent: showDXLabels || isHovered, 
-                  direction: 'top', 
-                  offset: [0, -8],
-                  className: isHovered ? 'dx-tooltip dx-tooltip-highlighted' : 'dx-tooltip'
-                })
                 .addTo(map);
               if (isHovered) {
                 dxCircle.bringToFront();
               }
               dxPathsMarkersRef.current.push(dxCircle);
               
-              // Add hoverable circle at spotter end (smaller, different style) - no permanent label
+              // Add colored callsign label for DX station (if labels enabled or hovered)
+              if (showDXLabels || isHovered) {
+                const labelBg = isHovered ? '#ffffff' : color;
+                const labelText = isHovered ? color : textColor;
+                const labelIcon = L.divIcon({
+                  className: '',
+                  html: `<div style="
+                    background: ${labelBg};
+                    color: ${labelText};
+                    padding: 2px 6px;
+                    border-radius: 3px;
+                    font-family: JetBrains Mono, monospace;
+                    font-size: 11px;
+                    font-weight: ${isHovered ? '700' : '600'};
+                    white-space: nowrap;
+                    border: 1px solid ${isHovered ? color : 'rgba(0,0,0,0.3)'};
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+                    ${isHovered ? 'transform: scale(1.1);' : ''}
+                  ">${path.dxCall}</div>`,
+                  iconSize: [0, 0],
+                  iconAnchor: [-8, 20]
+                });
+                const labelMarker = L.marker([path.dxLat, path.dxLon], { icon: labelIcon, interactive: false })
+                  .addTo(map);
+                if (isHovered) {
+                  labelMarker.setZIndexOffset(1000);
+                }
+                dxPathsMarkersRef.current.push(labelMarker);
+              }
+              
+              // Add hoverable circle at spotter end (smaller, different style)
               const spotterCircle = L.circleMarker([path.spotterLat, path.spotterLon], {
                 radius: isHovered ? 6 : 4,
                 fillColor: isHovered ? '#ffffff' : '#00aaff',
@@ -2662,17 +2688,36 @@
                 fillOpacity: isHovered ? 1 : 0.7
               })
                 .bindPopup(spotterPopupContent)
-                .bindTooltip(path.spotter, { 
-                  permanent: isHovered,  // Show on hover from list
-                  direction: 'top', 
-                  offset: [0, -6],
-                  className: 'dx-tooltip'
-                })
                 .addTo(map);
               if (isHovered) {
                 spotterCircle.bringToFront();
               }
               dxPathsMarkersRef.current.push(spotterCircle);
+              
+              // Add spotter label only when hovered
+              if (isHovered) {
+                const spotterLabelIcon = L.divIcon({
+                  className: '',
+                  html: `<div style="
+                    background: #00aaff;
+                    color: #000;
+                    padding: 2px 6px;
+                    border-radius: 3px;
+                    font-family: JetBrains Mono, monospace;
+                    font-size: 10px;
+                    font-weight: 600;
+                    white-space: nowrap;
+                    border: 1px solid rgba(0,0,0,0.3);
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+                  ">${path.spotter}</div>`,
+                  iconSize: [0, 0],
+                  iconAnchor: [-8, 16]
+                });
+                const spotterLabel = L.marker([path.spotterLat, path.spotterLon], { icon: spotterLabelIcon, interactive: false })
+                  .addTo(map);
+                spotterLabel.setZIndexOffset(999);
+                dxPathsMarkersRef.current.push(spotterLabel);
+              }
               
             } catch (err) {
               console.error('[DX Paths] Error rendering path:', err, path);
