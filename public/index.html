@@ -3054,6 +3054,24 @@
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'var(--text-secondary)' }}>
           <span>UPTIME: {uptime}</span>
           <span style={{ color: 'var(--accent-cyan)' }}>v{version}</span>
+          <a
+            href="https://buymeacoffee.com/k0cjh"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              background: 'linear-gradient(135deg, #ff813f 0%, #ffdd00 100%)', 
+              border: 'none',
+              borderRadius: '6px', padding: '8px 12px', color: '#000',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
+              fontFamily: 'JetBrains Mono, monospace', fontSize: '13px',
+              fontWeight: '600', textDecoration: 'none',
+              transition: 'all 0.2s',
+              boxShadow: '0 2px 8px rgba(255, 129, 63, 0.3)'
+            }}
+            title="Buy me a coffee!"
+          >
+            ☕ Donate
+          </a>
           <button
             onClick={onSettingsClick}
             style={{
@@ -4616,6 +4634,22 @@
               Click map to set DX • 73 de {config.callsign}
             </span>
             <div style={{ display: 'flex', gap: '8px' }}>
+              <a
+                href="https://buymeacoffee.com/k0cjh"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  background: 'linear-gradient(135deg, #ff813f 0%, #ffdd00 100%)', 
+                  border: 'none',
+                  padding: '4px 10px', borderRadius: '4px', color: '#000',
+                  fontSize: '12px', cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace',
+                  fontWeight: '600', textDecoration: 'none',
+                  display: 'flex', alignItems: 'center', gap: '4px'
+                }}
+                title="Buy me a coffee!"
+              >
+                ☕ Donate
+              </a>
               <button
                 onClick={onSettingsClick}
                 style={{
@@ -5329,6 +5363,22 @@
             
             {/* Settings & Fullscreen Buttons */}
             <div style={{ display: 'flex', gap: '8px' }}>
+              <a
+                href="https://buymeacoffee.com/k0cjh"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  background: 'linear-gradient(135deg, #ff813f 0%, #ffdd00 100%)', 
+                  border: 'none',
+                  padding: '6px 12px', borderRadius: '4px', color: '#000',
+                  fontSize: '13px', cursor: 'pointer',
+                  fontWeight: '600', textDecoration: 'none',
+                  display: 'flex', alignItems: 'center', gap: '4px'
+                }}
+                title="Buy me a coffee!"
+              >
+                ☕ Donate
+              </a>
               <button
                 onClick={() => setShowSettings(true)}
                 style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '4px', color: 'var(--text-secondary)', fontSize: '13px', cursor: 'pointer' }}
