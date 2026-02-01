@@ -180,20 +180,46 @@ async function runPrediction(params) {
     
     console.log(`[ITURHFProp] Running prediction ${id}`);
     console.log(`[ITURHFProp] TX: ${params.txLat}, ${params.txLon} -> RX: ${params.rxLat}, ${params.rxLon}`);
+    console.log(`[ITURHFProp] Input file:\n${inputContent}`);
     
     // Run ITURHFProp
     const startTime = Date.now();
+    const cmd = `${ITURHFPROP_PATH} ${inputPath} ${outputPath}`;
+    console.log(`[ITURHFProp] Command: ${cmd}`);
     
     try {
-      execSync(`${ITURHFPROP_PATH} ${inputPath} ${outputPath}`, {
+      const result = execSync(cmd, {
         timeout: 30000,  // 30 second timeout
-        stdio: ['pipe', 'pipe', 'pipe']
+        encoding: 'utf8',
+        env: { ...process.env, LD_LIBRARY_PATH: '/opt/iturhfprop:' + (process.env.LD_LIBRARY_PATH || '') }
       });
+      console.log(`[ITURHFProp] stdout: ${result}`);
     } catch (execError) {
-      console.error('[ITURHFProp] Execution error:', execError.message);
+      console.error('[ITURHFProp] Execution failed!');
+      console.error('[ITURHFProp] Exit code:', execError.status);
+      console.error('[ITURHFProp] stderr:', execError.stderr?.toString() || 'none');
+      console.error('[ITURHFProp] stdout:', execError.stdout?.toString() || 'none');
+      console.error('[ITURHFProp] Error:', execError.message);
+      
       // Try to get any output that was generated
       if (!fs.existsSync(outputPath)) {
-        throw new Error('ITURHFProp failed to produce output');
+        // Check if binary exists and is executable
+        try {
+          const stats = fs.statSync(ITURHFPROP_PATH);
+          console.log(`[ITURHFProp] Binary exists, size: ${stats.size}, mode: ${stats.mode.toString(8)}`);
+        } catch (e) {
+          console.error(`[ITURHFProp] Binary not found at ${ITURHFPROP_PATH}`);
+        }
+        
+        // Check data directory
+        try {
+          const dataFiles = fs.readdirSync(ITURHFPROP_DATA + '/Data').slice(0, 5);
+          console.log(`[ITURHFProp] Data dir contains: ${dataFiles.join(', ')}...`);
+        } catch (e) {
+          console.error(`[ITURHFProp] Data dir error: ${e.message}`);
+        }
+        
+        throw new Error(`ITURHFProp failed: ${execError.stderr?.toString() || execError.message}`);
       }
     }
     
@@ -236,16 +262,100 @@ async function runPrediction(params) {
 app.get('/api/health', (req, res) => {
   const binaryExists = fs.existsSync(ITURHFPROP_PATH);
   const dataExists = fs.existsSync(ITURHFPROP_DATA);
+  const dataSubExists = fs.existsSync(ITURHFPROP_DATA + '/Data');
+  const ionMapExists = fs.existsSync(ITURHFPROP_DATA + '/IonMap');
+  
+  // Check for shared libraries
+  const libp533Exists = fs.existsSync('/opt/iturhfprop/libp533.so');
+  const libp372Exists = fs.existsSync('/opt/iturhfprop/libp372.so');
   
   res.json({
-    status: binaryExists && dataExists ? 'healthy' : 'degraded',
+    status: binaryExists && dataSubExists && ionMapExists && libp533Exists ? 'healthy' : 'degraded',
     service: 'iturhfprop',
     version: '1.0.0',
     engine: 'ITURHFProp (ITU-R P.533-14)',
     binary: binaryExists ? 'found' : 'missing',
-    data: dataExists ? 'found' : 'missing',
+    libp533: libp533Exists ? 'found' : 'missing',
+    libp372: libp372Exists ? 'found' : 'missing',
+    dataDir: dataSubExists ? 'found' : 'missing',
+    ionMapDir: ionMapExists ? 'found' : 'missing',
+    paths: {
+      binary: ITURHFPROP_PATH,
+      data: ITURHFPROP_DATA
+    },
     timestamp: new Date().toISOString()
   });
+});
+
+/**
+ * Diagnostic endpoint - test binary execution
+ */
+app.get('/api/diag', async (req, res) => {
+  const results = {
+    binary: {},
+    libraries: {},
+    data: {},
+    testRun: {}
+  };
+  
+  // Check binary
+  try {
+    const stats = fs.statSync(ITURHFPROP_PATH);
+    results.binary = {
+      exists: true,
+      size: stats.size,
+      mode: stats.mode.toString(8),
+      path: ITURHFPROP_PATH
+    };
+  } catch (e) {
+    results.binary = { exists: false, error: e.message };
+  }
+  
+  // Check libraries
+  try {
+    const libs = fs.readdirSync('/opt/iturhfprop').filter(f => f.endsWith('.so'));
+    results.libraries = { found: libs };
+  } catch (e) {
+    results.libraries = { error: e.message };
+  }
+  
+  // Check data files
+  try {
+    const dataFiles = fs.readdirSync(ITURHFPROP_DATA + '/Data').slice(0, 10);
+    results.data.dataDir = dataFiles;
+  } catch (e) {
+    results.data.dataDir = { error: e.message };
+  }
+  
+  try {
+    const ionFiles = fs.readdirSync(ITURHFPROP_DATA + '/IonMap').slice(0, 5);
+    results.data.ionMapDir = ionFiles;
+  } catch (e) {
+    results.data.ionMapDir = { error: e.message };
+  }
+  
+  // Try running ldd on the binary
+  try {
+    const { execSync } = require('child_process');
+    const lddOutput = execSync(`ldd ${ITURHFPROP_PATH} 2>&1`, { encoding: 'utf8' });
+    results.testRun.ldd = lddOutput.split('\n').slice(0, 10);
+  } catch (e) {
+    results.testRun.ldd = { error: e.message };
+  }
+  
+  // Try running the binary with no args to see usage
+  try {
+    const { execSync } = require('child_process');
+    const output = execSync(`${ITURHFPROP_PATH} 2>&1 || true`, { 
+      encoding: 'utf8',
+      env: { ...process.env, LD_LIBRARY_PATH: '/opt/iturhfprop' }
+    });
+    results.testRun.usage = output.split('\n').slice(0, 10);
+  } catch (e) {
+    results.testRun.usage = { error: e.message, stderr: e.stderr?.toString(), stdout: e.stdout?.toString() };
+  }
+  
+  res.json(results);
 });
 
 /**
