@@ -1848,6 +1848,18 @@
                       : '⚡ estimated'
                   }
                 </span>
+                {dataSource && dataSource.includes('ITU') && (
+                  <span style={{ 
+                    color: '#ff6b35', 
+                    fontSize: '9px', 
+                    marginLeft: '8px',
+                    padding: '1px 4px',
+                    background: 'rgba(255,107,53,0.15)',
+                    borderRadius: '3px'
+                  }}>
+                    🔬 ITU-R P.533
+                  </span>
+                )}
               </div>
               
               {viewMode === 'chart' ? (
