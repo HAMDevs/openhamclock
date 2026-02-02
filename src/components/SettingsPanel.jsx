@@ -1,14 +1,11 @@
 /**
  * SettingsPanel Component
- * Full settings modal matching production version
+ * Full settings modal with map layer controls
  */
 import React, { useState, useEffect } from 'react';
 import { calculateGridSquare } from '../utils/geo.js';
-<<<<<<< Updated upstream
-=======
 import { useTranslation, Trans } from 'react-i18next';
 import { LANGUAGES } from '../lang/i18n.js';
->>>>>>> Stashed changes
 
 export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
   const [callsign, setCallsign] = useState(config?.callsign || '');
@@ -18,14 +15,11 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
   const [theme, setTheme] = useState(config?.theme || 'dark');
   const [layout, setLayout] = useState(config?.layout || 'modern');
   const [dxClusterSource, setDxClusterSource] = useState(config?.dxClusterSource || 'dxspider-proxy');
-<<<<<<< Updated upstream
-=======
   const { t, i18n } = useTranslation();
   
   // Layer controls
   const [layers, setLayers] = useState([]);
   const [activeTab, setActiveTab] = useState('station');
->>>>>>> Stashed changes
 
   useEffect(() => {
     if (config) {
@@ -35,19 +29,33 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
       setTheme(config.theme || 'dark');
       setLayout(config.layout || 'modern');
       setDxClusterSource(config.dxClusterSource || 'dxspider-proxy');
-      // Use locator from config, or calculate from coordinates
-      if (config.locator) {
-        setGridSquare(config.locator);
-      } else if (config.location?.lat && config.location?.lon) {
+      if (config.location?.lat && config.location?.lon) {
         setGridSquare(calculateGridSquare(config.location.lat, config.location.lon));
       }
     }
   }, [config, isOpen]);
 
-  // Update lat/lon when grid square changes
+  // Load layers when panel opens
+  useEffect(() => {
+    if (isOpen && window.hamclockLayerControls) {
+      setLayers(window.hamclockLayerControls.layers || []);
+    }
+  }, [isOpen]);
+
+  // Refresh layers periodically
+  useEffect(() => {
+    if (isOpen && activeTab === 'layers') {
+      const interval = setInterval(() => {
+        if (window.hamclockLayerControls) {
+          setLayers([...window.hamclockLayerControls.layers]);
+        }
+      }, 200);
+      return () => clearInterval(interval);
+    }
+  }, [isOpen, activeTab]);
+
   const handleGridChange = (grid) => {
     setGridSquare(grid.toUpperCase());
-    // Parse grid square to lat/lon if valid (6 char)
     if (grid.length >= 4) {
       const parsed = parseGridSquare(grid);
       if (parsed) {
@@ -57,7 +65,6 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
     }
   };
 
-  // Parse grid square to coordinates
   const parseGridSquare = (grid) => {
     grid = grid.toUpperCase();
     if (grid.length < 4) return null;
@@ -80,7 +87,6 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
     return { lat, lon };
   };
 
-  // Update grid when lat/lon changes
   useEffect(() => {
     if (lat && lon) {
       setGridSquare(calculateGridSquare(lat, lon));
@@ -96,11 +102,42 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
         },
         (error) => {
           console.error('Geolocation error:', error);
-          alert('Unable to get location. Please enter manually.');
+          alert(t('station.settings.useLocation.error1'));
         }
       );
     } else {
-      alert('Geolocation not supported by your browser.');
+      alert(t('station.settings.useLocation.error2'));
+    }
+  };
+
+  const handleToggleLayer = (layerId) => {
+    if (window.hamclockLayerControls) {
+      const layer = layers.find(l => l.id === layerId);
+      const newEnabledState = !layer.enabled;
+      
+      // Update the control
+      window.hamclockLayerControls.toggleLayer(layerId, newEnabledState);
+      
+      // Force immediate UI update
+      setLayers(prevLayers => 
+        prevLayers.map(l => 
+          l.id === layerId ? { ...l, enabled: newEnabledState } : l
+        )
+      );
+      
+      // Refresh after a short delay to get the updated state
+      setTimeout(() => {
+        if (window.hamclockLayerControls) {
+          setLayers([...window.hamclockLayerControls.layers]);
+        }
+      }, 100);
+    }
+  };
+
+  const handleOpacityChange = (layerId, opacity) => {
+    if (window.hamclockLayerControls) {
+      window.hamclockLayerControls.setOpacity(layerId, opacity);
+      setLayers([...window.hamclockLayerControls.layers]);
     }
   };
 
@@ -108,7 +145,6 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
     onSave({
       ...config,
       callsign: callsign.toUpperCase(),
-      locator: gridSquare.toUpperCase(),
       location: { lat: parseFloat(lat), lon: parseFloat(lon) },
       theme,
       layout,
@@ -119,16 +155,22 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
 
   if (!isOpen) return null;
 
+  const Code = ({ children }) => (
+    <code style={{ background: 'var(--bg-tertiary)', padding: '2px 4px', borderRadius: '3px' }}>
+      {children}
+    </code>
+  );
+
   const themeDescriptions = {
-    dark: '→ Modern dark theme (default)',
-    light: '→ Light theme for daytime use',
-    legacy: '→ Green terminal CRT style',
-    retro: '→ 90s Windows retro style'
+    dark: t('station.settings.theme.dark.describe'),
+    light: t('station.settings.theme.light.describe'),
+    legacy: t('station.settings.theme.legacy.describe'),
+    retro: t('station.settings.theme.retro.describe')
   };
 
   const layoutDescriptions = {
-    modern: '→ Modern responsive grid layout',
-    classic: '→ Original HamClock-style layout'
+    modern: t('station.settings.layout.modern.describe'),
+    classic: t('station.settings.layout.classic.describe')
   };
 
   return (
@@ -149,186 +191,285 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
         border: '2px solid var(--accent-amber)',
         borderRadius: '12px',
         padding: '24px',
-        width: '420px',
+        width: '520px',
         maxHeight: '90vh',
         overflowY: 'auto'
       }}>
         <h2 style={{ 
           color: 'var(--accent-cyan)', 
           marginTop: 0,
-          marginBottom: '16px',
+          marginBottom: '24px',
           textAlign: 'center',
           fontFamily: 'Orbitron, monospace',
           fontSize: '20px'
         }}>
-          ⚙ Station Settings
+          {t('station.settings.title')}
         </h2>
 
-        {/* First-time setup banner */}
-        {(config?.configIncomplete || config?.callsign === 'N0CALL' || !config?.locator) && (
-          <div style={{
-            background: 'rgba(255, 193, 7, 0.15)',
-            border: '1px solid var(--accent-amber)',
-            borderRadius: '8px',
-            padding: '12px 16px',
-            marginBottom: '20px',
-            fontSize: '13px'
-          }}>
-            <div style={{ color: 'var(--accent-amber)', fontWeight: '700', marginBottom: '6px' }}>
-              👋 Welcome to OpenHamClock!
-            </div>
-            <div style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              Please enter your callsign and grid square to get started. 
-              Your settings will be saved in your browser.
-            </div>
-            <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '8px' }}>
-              💡 Tip: For permanent config, copy <code style={{ background: 'var(--bg-tertiary)', padding: '2px 4px', borderRadius: '3px' }}>.env.example</code> to <code style={{ background: 'var(--bg-tertiary)', padding: '2px 4px', borderRadius: '3px' }}>.env</code> and set CALLSIGN and LOCATOR
-            </div>
-          </div>
-        )}
-
-        {/* Callsign */}
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'block', marginBottom: '6px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
-            Your Callsign
-          </label>
-          <input
-            type="text"
-            value={callsign}
-            onChange={(e) => setCallsign(e.target.value.toUpperCase())}
+        {/* Tab Navigation */}
+        <div style={{
+          display: 'flex',
+          gap: '8px',
+          marginBottom: '24px',
+          borderBottom: '1px solid var(--border-color)',
+          paddingBottom: '12px'
+        }}>
+          <button
+            onClick={() => setActiveTab('station')}
             style={{
-              width: '100%',
-              padding: '12px',
-              background: 'var(--bg-tertiary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '6px',
-              color: 'var(--accent-amber)',
-              fontSize: '18px',
-              fontFamily: 'JetBrains Mono, monospace',
-              fontWeight: '700',
-              boxSizing: 'border-box'
+              flex: 1,
+              padding: '10px',
+              background: activeTab === 'station' ? 'var(--accent-amber)' : 'transparent',
+              border: 'none',
+              borderRadius: '6px 6px 0 0',
+              color: activeTab === 'station' ? '#000' : 'var(--text-secondary)',
+              fontSize: '13px',
+              cursor: 'pointer',
+              fontWeight: activeTab === 'station' ? '700' : '400',
+              fontFamily: 'JetBrains Mono, monospace'
             }}
-          />
-        </div>
-
-        {/* Grid Square */}
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'block', marginBottom: '6px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
-            Grid Square (or enter Lat/Lon below)
-          </label>
-          <input
-            type="text"
-            value={gridSquare}
-            onChange={(e) => handleGridChange(e.target.value)}
-            placeholder="FN20nc"
-            maxLength={6}
+          >
+            📡 Station
+          </button>
+          <button
+            onClick={() => setActiveTab('layers')}
             style={{
-              width: '100%',
-              padding: '12px',
-              background: 'var(--bg-tertiary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '6px',
-              color: 'var(--accent-amber)',
-              fontSize: '18px',
-              fontFamily: 'JetBrains Mono, monospace',
-              fontWeight: '700',
-              boxSizing: 'border-box'
+              flex: 1,
+              padding: '10px',
+              background: activeTab === 'layers' ? 'var(--accent-amber)' : 'transparent',
+              border: 'none',
+              borderRadius: '6px 6px 0 0',
+              color: activeTab === 'layers' ? '#000' : 'var(--text-secondary)',
+              fontSize: '13px',
+              cursor: 'pointer',
+              fontWeight: activeTab === 'layers' ? '700' : '400',
+              fontFamily: 'JetBrains Mono, monospace'
             }}
-          />
+          >
+            🗺️ Map Layers
+          </button>
         </div>
 
-        {/* Lat/Lon */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-          <div>
-            <label style={{ display: 'block', marginBottom: '6px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase' }}>
-              Latitude
-            </label>
-            <input
-              type="number"
-              step="0.000001"
-              value={lat}
-              onChange={(e) => setLat(parseFloat(e.target.value))}
-              style={{
-                width: '100%',
-                padding: '10px',
-                background: 'var(--bg-tertiary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
-                color: 'var(--text-primary)',
-                fontSize: '14px',
-                fontFamily: 'JetBrains Mono, monospace',
-                boxSizing: 'border-box'
-              }}
-            />
-          </div>
-          <div>
-            <label style={{ display: 'block', marginBottom: '6px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase' }}>
-              Longitude
-            </label>
-            <input
-              type="number"
-              step="0.000001"
-              value={lon}
-              onChange={(e) => setLon(parseFloat(e.target.value))}
-              style={{
-                width: '100%',
-                padding: '10px',
-                background: 'var(--bg-tertiary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
-                color: 'var(--text-primary)',
-                fontSize: '14px',
-                fontFamily: 'JetBrains Mono, monospace',
-                boxSizing: 'border-box'
-              }}
-            />
-          </div>
-        </div>
+        {/* Station Settings Tab */}
+        {activeTab === 'station' && (
+          <>
+            {/* First-time setup banner */}
+            {(config?.configIncomplete || config?.callsign === 'N0CALL' || !config?.locator) && (
+              <div style={{
+                background: 'rgba(255, 193, 7, 0.15)',
+                border: '1px solid var(--accent-amber)',
+                borderRadius: '8px',
+                padding: '12px 16px',
+                marginBottom: '20px',
+                fontSize: '13px'
+              }}>
+                <div style={{ color: 'var(--accent-amber)', fontWeight: '700', marginBottom: '6px' }}>
+                  {t("station.settings.welcome")}
+                </div>
+                <div style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                  {t("station.settings.describe")}
+                </div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginTop: '8px' }}>
+                  <Trans i18nKey="station.settings.tip.env" components={{ envExample: <Code />, env: <Code /> }} />
+                </div>
+              </div>
+            )}
 
-        {/* Use My Location button */}
-        <button
-          onClick={handleUseLocation}
-          style={{
-            width: '100%',
-            padding: '10px',
-            background: 'var(--bg-tertiary)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '6px',
-            color: 'var(--text-secondary)',
-            fontSize: '13px',
-            cursor: 'pointer',
-            marginBottom: '20px'
-          }}
-        >
-          📍 Use My Current Location
-        </button>
-
-        {/* Theme */}
-        <div style={{ marginBottom: '8px' }}>
-          <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
-            Theme
-          </label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
-            {['dark', 'light', 'legacy', 'retro'].map((t) => (
-              <button
-                key={t}
-                onClick={() => setTheme(t)}
+            {/* Callsign */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '6px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                {t('station.settings.callsign')}
+              </label>
+              <input
+                type="text"
+                value={callsign}
+                onChange={(e) => setCallsign(e.target.value.toUpperCase())}
                 style={{
-                  padding: '10px',
-                  background: theme === t ? 'var(--accent-amber)' : 'var(--bg-tertiary)',
-                  border: `1px solid ${theme === t ? 'var(--accent-amber)' : 'var(--border-color)'}`,
+                  width: '100%',
+                  padding: '12px',
+                  background: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-color)',
                   borderRadius: '6px',
-                  color: theme === t ? '#000' : 'var(--text-secondary)',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  fontWeight: theme === t ? '600' : '400'
+                  color: 'var(--accent-amber)',
+                  fontSize: '18px',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontWeight: '700',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            {/* Grid Square */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '6px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                {t('station.settings.locator')}
+              </label>
+              <input
+                type="text"
+                value={gridSquare}
+                onChange={(e) => handleGridChange(e.target.value)}
+                placeholder="FN20nc"
+                maxLength={6}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  background: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '6px',
+                  color: 'var(--accent-amber)',
+                  fontSize: '18px',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontWeight: '700',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+
+            {/* Lat/Lon */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase' }}>
+                  {t('station.settings.latitude')}
+                </label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={isNaN(lat) ? '' : lat}
+                  onChange={(e) => setLat(parseFloat(e.target.value) || 0)}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: 'var(--bg-tertiary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '6px',
+                    color: 'var(--text-primary)',
+                    fontSize: '14px',
+                    fontFamily: 'JetBrains Mono, monospace',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase' }}>
+                  {t('station.settings.longitude')}
+                </label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={isNaN(lon) ? '' : lon}
+                  onChange={(e) => setLon(parseFloat(e.target.value) || 0)}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: 'var(--bg-tertiary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '6px',
+                    color: 'var(--text-primary)',
+                    fontSize: '14px',
+                    fontFamily: 'JetBrains Mono, monospace',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handleUseLocation}
+              style={{
+                width: '100%',
+                padding: '10px',
+                background: 'var(--bg-tertiary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                color: 'var(--text-secondary)',
+                fontSize: '13px',
+                cursor: 'pointer',
+                marginBottom: '20px'
+              }}
+            >
+              {t('station.settings.useLocation')}
+            </button>
+
+            {/* Theme */}
+            <div style={{ marginBottom: '8px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                {t('station.settings.theme')}
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                {['dark', 'light', 'legacy', 'retro'].map((th) => (
+                  <button
+                    key={th}
+                    onClick={() => setTheme(th)}
+                    style={{
+                      padding: '10px',
+                      background: theme === th ? 'var(--accent-amber)' : 'var(--bg-tertiary)',
+                      border: `1px solid ${theme === th ? 'var(--accent-amber)' : 'var(--border-color)'}`,
+                      borderRadius: '6px',
+                      color: theme === th ? '#000' : 'var(--text-secondary)',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      fontWeight: theme === th ? '600' : '400'
+                    }}
+                  >
+                    {th === 'dark' ? '🌙' : th === 'light' ? '☀️' : th === 'legacy' ? '💻' : '🪟'} {t('station.settings.theme.' + th)}
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                {themeDescriptions[theme]}
+              </div>
+            </div>
+
+            {/* Layout */}
+            <div style={{ marginBottom: '8px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                {t('station.settings.layout')}
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                {['modern', 'classic'].map((l) => (
+                  <button
+                    key={l}
+                    onClick={() => setLayout(l)}
+                    style={{
+                      padding: '10px',
+                      background: layout === l ? 'var(--accent-amber)' : 'var(--bg-tertiary)',
+                      border: `1px solid ${layout === l ? 'var(--accent-amber)' : 'var(--border-color)'}`,
+                      borderRadius: '6px',
+                      color: layout === l ? '#000' : 'var(--text-secondary)',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      fontWeight: layout === l ? '600' : '400'
+                    }}
+                  >
+                    {l === 'modern' ? '🖥️' : '📺'} {t('station.settings.layout.' + l)}
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                {layoutDescriptions[layout]}
+              </div>
+            </div>
+
+            {/* DX Cluster Source */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                {t('station.settings.dx.title')}
+              </label>
+              <select
+                value={dxClusterSource}
+                onChange={(e) => setDxClusterSource(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  background: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '6px',
+                  color: 'var(--accent-green)',
+                  fontSize: '14px',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  cursor: 'pointer'
                 }}
               >
-<<<<<<< Updated upstream
-                {t === 'dark' ? '🌙' : t === 'light' ? '☀️' : t === 'legacy' ? '💻' : '🪟'} {t.charAt(0).toUpperCase() + t.slice(1)}
-              </button>
-            ))}
-=======
                 <option value="dxspider-proxy">{t('station.settings.dx.option1')}</option>
                 <option value="hamqth">{t('station.settings.dx.option2')}</option>
                 <option value="dxwatch">{t('station.settings.dx.option3')}</option>
@@ -475,72 +616,8 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
                 No map layers available
               </div>
             )}
->>>>>>> Stashed changes
           </div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
-            {themeDescriptions[theme]}
-          </div>
-        </div>
-
-        {/* Layout */}
-        <div style={{ marginBottom: '8px' }}>
-          <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
-            Layout
-          </label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
-            {['modern', 'classic'].map((l) => (
-              <button
-                key={l}
-                onClick={() => setLayout(l)}
-                style={{
-                  padding: '10px',
-                  background: layout === l ? 'var(--accent-amber)' : 'var(--bg-tertiary)',
-                  border: `1px solid ${layout === l ? 'var(--accent-amber)' : 'var(--border-color)'}`,
-                  borderRadius: '6px',
-                  color: layout === l ? '#000' : 'var(--text-secondary)',
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  fontWeight: layout === l ? '600' : '400'
-                }}
-              >
-                {l === 'modern' ? '🖥️' : '📺'} {l.charAt(0).toUpperCase() + l.slice(1)}
-              </button>
-            ))}
-          </div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
-            {layoutDescriptions[layout]}
-          </div>
-        </div>
-
-        {/* DX Cluster Source */}
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
-            DX Cluster Source
-          </label>
-          <select
-            value={dxClusterSource}
-            onChange={(e) => setDxClusterSource(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '12px',
-              background: 'var(--bg-tertiary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '6px',
-              color: 'var(--accent-green)',
-              fontSize: '14px',
-              fontFamily: 'JetBrains Mono, monospace',
-              cursor: 'pointer'
-            }}
-          >
-            <option value="dxspider-proxy">⭐ DX Spider Proxy (Recommended)</option>
-            <option value="hamqth">HamQTH Cluster</option>
-            <option value="dxwatch">DXWatch</option>
-            <option value="auto">Auto (try all sources)</option>
-          </select>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
-            → Real-time DX Spider feed via our dedicated proxy service
-          </div>
-        </div>
+        )}
 
         {/* Buttons */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '24px' }}>
@@ -556,7 +633,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
               cursor: 'pointer'
             }}
           >
-            Cancel
+            {t('cancel')}
           </button>
           <button
             onClick={handleSave}
@@ -571,12 +648,12 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
               cursor: 'pointer'
             }}
           >
-            Save Settings
+            {t('station.settings.button.save')}
           </button>
         </div>
 
         <div style={{ textAlign: 'center', marginTop: '16px', fontSize: '11px', color: 'var(--text-muted)' }}>
-          Settings are saved in your browser
+          {t('station.settings.button.save.confirm')}
         </div>
       </div>
     </div>
