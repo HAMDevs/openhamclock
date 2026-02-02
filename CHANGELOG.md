@@ -9,6 +9,7 @@ All notable changes to OpenHamClock will be documented in this file.
   - `.env` is auto-created from `.env.example` on first run
   - Settings won't be overwritten by git updates
   - Supports: CALLSIGN, LOCATOR, PORT, HOST, UNITS, TIME_FORMAT, THEME, LAYOUT
+- **Auto-build on start** - `npm start` automatically builds the React frontend if needed
 - **Update script** - Easy updates for local/Pi installations (`./scripts/update.sh`)
   - Backs up config, pulls latest, rebuilds, preserves settings
 - **Network access configuration** - Set `HOST=0.0.0.0` to access from other devices

@@ -156,7 +156,10 @@ if (configMissing) {
 }
 
 // ITURHFProp service URL (optional - enables hybrid mode)
-const ITURHFPROP_URL = process.env.ITURHFPROP_URL || null;
+// Must be a full URL like https://iturhfprop.example.com
+const ITURHFPROP_URL = process.env.ITURHFPROP_URL && process.env.ITURHFPROP_URL.trim().startsWith('http') 
+  ? process.env.ITURHFPROP_URL.trim() 
+  : null;
 
 // Log configuration
 console.log(`[Config] Station: ${CONFIG.callsign} @ ${CONFIG.gridSquare || 'No grid'}`);
@@ -192,16 +195,26 @@ function logErrorOnce(category, message) {
   return false;
 }
 
-// Serve static files - use 'dist' in production (Vite build), 'public' in development
-const staticDir = process.env.NODE_ENV === 'production' 
-  ? path.join(__dirname, 'dist')
-  : path.join(__dirname, 'public');
-app.use(express.static(staticDir));
+// Serve static files
+// dist/ contains the built React app (from npm run build)
+// public/ contains the fallback page if build hasn't run
+const distDir = path.join(__dirname, 'dist');
+const publicDir = path.join(__dirname, 'public');
 
-// Also serve public folder for any additional assets
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, 'public')));
+// Check if dist/ exists (has index.html from build)
+const distExists = fs.existsSync(path.join(distDir, 'index.html'));
+
+if (distExists) {
+  // Serve built React app from dist/
+  app.use(express.static(distDir));
+  console.log('[Server] Serving React app from dist/');
+} else {
+  // No build found - serve placeholder from public/
+  console.log('[Server] ⚠️  No build found! Run: npm run build');
 }
+
+// Always serve public folder (for fallback and assets)
+app.use(express.static(publicDir));
 
 // ============================================
 // API PROXY ENDPOINTS
@@ -1770,16 +1783,15 @@ let tleCache = { data: null, timestamp: 0 };
 const TLE_CACHE_DURATION = 6 * 60 * 60 * 1000; // 6 hours
 
 app.get('/api/satellites/tle', async (req, res) => {
-  console.log('[Satellites] Fetching TLE data...');
-  
   try {
     const now = Date.now();
     
     // Return cached data if fresh
     if (tleCache.data && (now - tleCache.timestamp) < TLE_CACHE_DURATION) {
-      console.log('[Satellites] Returning cached TLE data');
       return res.json(tleCache.data);
     }
+    
+    console.log('[Satellites] Fetching fresh TLE data...');
     
     // Fetch fresh TLE data from CelesTrak
     const tleData = {};
@@ -1819,7 +1831,6 @@ app.get('/api/satellites/tle', async (req, res) => {
                 tle1: line1,
                 tle2: line2
               };
-              console.log('[Satellites] Found TLE for:', key, noradId);
             }
           }
         }
@@ -1829,10 +1840,18 @@ app.get('/api/satellites/tle', async (req, res) => {
     // Also try to get ISS specifically (it's in the stations group)
     if (!tleData['ISS']) {
       try {
+        const issController = new AbortController();
+        const issTimeout = setTimeout(() => issController.abort(), 10000);
+        
         const issResponse = await fetch(
           'https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=tle',
-          { headers: { 'User-Agent': 'OpenHamClock/3.3' } }
+          { 
+            headers: { 'User-Agent': 'OpenHamClock/3.3' },
+            signal: issController.signal
+          }
         );
+        clearTimeout(issTimeout);
+        
         if (issResponse.ok) {
           const issText = await issResponse.text();
           const issLines = issText.trim().split('\n');
@@ -1846,7 +1865,9 @@ app.get('/api/satellites/tle', async (req, res) => {
           }
         }
       } catch (e) {
-        console.log('[Satellites] Could not fetch ISS TLE:', e.message);
+        if (e.name !== 'AbortError') {
+          logErrorOnce('Satellites', `ISS TLE fetch: ${e.message}`);
+        }
       }
     }
     
@@ -1857,7 +1878,10 @@ app.get('/api/satellites/tle', async (req, res) => {
     res.json(tleData);
     
   } catch (error) {
-    console.error('[Satellites] TLE fetch error:', error.message);
+    // Don't spam logs for timeouts (AbortError) or network issues
+    if (error.name !== 'AbortError') {
+      logErrorOnce('Satellites', `TLE fetch error: ${error.message}`);
+    }
     // Return cached data even if stale, or empty object
     res.json(tleCache.data || {});
   }
@@ -3083,9 +3107,11 @@ app.get('/api/config', (req, res) => {
 // ============================================
 
 app.get('*', (req, res) => {
-  const indexPath = process.env.NODE_ENV === 'production'
-    ? path.join(__dirname, 'dist', 'index.html')
-    : path.join(__dirname, 'public', 'index.html');
+  // Try dist first (built React app), fallback to public (monolithic)
+  const distIndex = path.join(__dirname, 'dist', 'index.html');
+  const publicIndex = path.join(__dirname, 'public', 'index.html');
+  
+  const indexPath = fs.existsSync(distIndex) ? distIndex : publicIndex;
   res.sendFile(indexPath);
 });
 
