@@ -32,15 +32,15 @@ export const DXClusterPanel = ({
   };
 
   const filterCount = getActiveFilterCount();
+  const spots = data || [];
 
   return (
     <div className="panel" style={{ 
       padding: '10px', 
       display: 'flex', 
       flexDirection: 'column',
-      flex: '1 1 auto',
-      overflow: 'hidden',
-      minHeight: 0
+      height: '100%',
+      overflow: 'hidden'
     }}>
       {/* Header */}
       <div style={{ 
@@ -54,7 +54,7 @@ export const DXClusterPanel = ({
       }}>
         <span>🌐 DX CLUSTER <span style={{ color: 'var(--accent-green)', fontSize: '10px' }}>● LIVE</span></span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontSize: '8px', color: 'var(--text-muted)' }}>{data?.length || 0}/{totalSpots || 0}</span>
+          <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{spots.length}/{totalSpots || spots.length}</span>
           <button
             onClick={onOpenFilters}
             style={{
@@ -97,7 +97,7 @@ export const DXClusterPanel = ({
           onChange={(e) => onFilterChange?.({ ...filters, callsign: e.target.value || undefined })}
           style={{
             flex: 1,
-            padding: '3px 6px',
+            padding: '4px 8px',
             background: 'var(--bg-secondary)',
             border: '1px solid var(--border-color)',
             borderRadius: '3px',
@@ -113,7 +113,7 @@ export const DXClusterPanel = ({
         <div style={{ display: 'flex', justifyContent: 'center', padding: '20px' }}>
           <div className="loading-spinner" />
         </div>
-      ) : !data || data.length === 0 ? (
+      ) : spots.length === 0 ? (
         <div style={{ 
           textAlign: 'center', 
           padding: '20px', 
@@ -126,14 +126,29 @@ export const DXClusterPanel = ({
         <div style={{ 
           flex: 1, 
           overflow: 'auto',
-          fontSize: '11px',
+          fontSize: '12px',
           fontFamily: 'JetBrains Mono, monospace'
         }}>
-          {data.slice(0, 20).map((spot, i) => {
-            const freq = parseFloat(spot.freq);
-            const color = getBandColor(freq / 1000);
-            const isHovered = hoveredSpot?.call === spot.call && 
-                             Math.abs(parseFloat(hoveredSpot?.freq) - freq) < 1;
+          {spots.slice(0, 25).map((spot, i) => {
+            // Frequency can be in MHz (string like "14.070") or kHz (number like 14070)
+            let freqDisplay = '?';
+            let freqMHz = 0;
+            
+            if (spot.freq) {
+              const freqVal = parseFloat(spot.freq);
+              if (freqVal > 1000) {
+                // It's in kHz, convert to MHz
+                freqMHz = freqVal / 1000;
+                freqDisplay = freqMHz.toFixed(3);
+              } else {
+                // Already in MHz
+                freqMHz = freqVal;
+                freqDisplay = freqVal.toFixed(3);
+              }
+            }
+            
+            const color = getBandColor(freqMHz);
+            const isHovered = hoveredSpot?.call === spot.call;
             
             return (
               <div
@@ -142,22 +157,23 @@ export const DXClusterPanel = ({
                 onMouseLeave={() => onHoverSpot?.(null)}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '55px 1fr auto',
-                  gap: '6px',
-                  padding: '4px 6px',
+                  gridTemplateColumns: '60px 1fr auto',
+                  gap: '8px',
+                  padding: '5px 6px',
                   borderRadius: '3px',
-                  marginBottom: '1px',
-                  background: isHovered ? 'rgba(68, 136, 255, 0.2)' : (i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'),
+                  marginBottom: '2px',
+                  background: isHovered ? 'rgba(68, 136, 255, 0.25)' : (i % 2 === 0 ? 'rgba(255,255,255,0.03)' : 'transparent'),
                   cursor: 'pointer',
-                  transition: 'background 0.15s'
+                  transition: 'background 0.15s',
+                  borderLeft: isHovered ? '2px solid #4488ff' : '2px solid transparent'
                 }}
               >
                 <div style={{ color, fontWeight: '600' }}>
-                  {(freq / 1000).toFixed(3)}
+                  {freqDisplay}
                 </div>
                 <div style={{ 
                   color: 'var(--text-primary)', 
-                  fontWeight: '600',
+                  fontWeight: '700',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap'

@@ -330,34 +330,42 @@ const App = () => {
         </div>
         
         {/* RIGHT SIDEBAR */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflow: 'hidden' }}>
-          {/* DX Cluster */}
-          <DXClusterPanel
-            data={dxCluster.data}
-            loading={dxCluster.loading}
-            totalSpots={dxCluster.totalSpots}
-            filters={dxFilters}
-            onFilterChange={setDxFilters}
-            onOpenFilters={() => setShowDXFilters(true)}
-            onHoverSpot={setHoveredSpot}
-            hoveredSpot={hoveredSpot}
-            showOnMap={mapLayers.showDXPaths}
-            onToggleMap={toggleDXPaths}
-          />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', overflow: 'hidden' }}>
+          {/* DX Cluster - takes most space */}
+          <div style={{ flex: '2 1 0', minHeight: '250px', overflow: 'hidden' }}>
+            <DXClusterPanel
+              data={dxCluster.data}
+              loading={dxCluster.loading}
+              totalSpots={dxCluster.totalSpots}
+              filters={dxFilters}
+              onFilterChange={setDxFilters}
+              onOpenFilters={() => setShowDXFilters(true)}
+              onHoverSpot={setHoveredSpot}
+              hoveredSpot={hoveredSpot}
+              showOnMap={mapLayers.showDXPaths}
+              onToggleMap={toggleDXPaths}
+            />
+          </div>
           
-          {/* DXpeditions */}
-          <DXpeditionPanel data={dxpeditions.data} loading={dxpeditions.loading} />
+          {/* DXpeditions - smaller */}
+          <div style={{ flex: '0 0 auto', maxHeight: '140px', overflow: 'hidden' }}>
+            <DXpeditionPanel data={dxpeditions.data} loading={dxpeditions.loading} />
+          </div>
           
-          {/* POTA */}
-          <POTAPanel 
-            data={potaSpots.data} 
-            loading={potaSpots.loading} 
-            showOnMap={mapLayers.showPOTA}
-            onToggleMap={togglePOTA}
-          />
+          {/* POTA - smaller */}
+          <div style={{ flex: '0 0 auto', maxHeight: '120px', overflow: 'hidden' }}>
+            <POTAPanel 
+              data={potaSpots.data} 
+              loading={potaSpots.loading} 
+              showOnMap={mapLayers.showPOTA}
+              onToggleMap={togglePOTA}
+            />
+          </div>
           
-          {/* Contests */}
-          <ContestPanel data={contests.data} loading={contests.loading} />
+          {/* Contests - smaller */}
+          <div style={{ flex: '0 0 auto', maxHeight: '150px', overflow: 'hidden' }}>
+            <ContestPanel data={contests.data} loading={contests.loading} />
+          </div>
         </div>
       </div>
       

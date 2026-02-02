@@ -1,68 +1,72 @@
 /**
  * ContestPanel Component
- * Displays upcoming amateur radio contests
+ * Displays upcoming contests (compact version)
  */
 import React from 'react';
 
 export const ContestPanel = ({ data, loading }) => {
+  const getModeColor = (mode) => {
+    switch(mode) {
+      case 'CW': return 'var(--accent-cyan)';
+      case 'SSB': return 'var(--accent-amber)';
+      case 'RTTY': return 'var(--accent-purple)';
+      case 'FT8': case 'FT4': return 'var(--accent-green)';
+      default: return 'var(--text-secondary)';
+    }
+  };
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
   return (
-    <div className="panel" style={{ padding: '12px' }}>
-      <div className="panel-header">🏆 CONTESTS</div>
-      {loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '20px' }}>
-          <div className="loading-spinner" />
-        </div>
-      ) : data.length === 0 ? (
-        <div style={{ 
-          textAlign: 'center', 
-          padding: '20px', 
-          color: 'var(--text-muted)',
-          fontSize: '12px'
-        }}>
-          No upcoming contests
-        </div>
-      ) : (
-        <div style={{ 
-          fontSize: '11px', 
-          fontFamily: 'JetBrains Mono, monospace'
-        }}>
-          {data.slice(0, 5).map((contest, i) => (
-            <div
-              key={`${contest.name}-${i}`}
-              style={{
-                padding: '8px',
-                borderRadius: '4px',
-                marginBottom: '4px',
-                background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent'
-              }}
-            >
-              <div style={{ 
-                color: 'var(--accent-cyan)', 
-                fontWeight: '600',
-                marginBottom: '4px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap'
-              }}>
-                {contest.name}
-              </div>
-              <div style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between',
-                color: 'var(--text-muted)',
-                fontSize: '10px'
-              }}>
-                <span>{contest.startDate}</span>
-                <span style={{ 
-                  color: contest.isActive ? 'var(--accent-green)' : 'var(--text-muted)'
+    <div className="panel" style={{ padding: '8px', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div className="panel-header" style={{ 
+        marginBottom: '6px',
+        fontSize: '11px'
+      }}>
+        🏆 CONTESTS
+      </div>
+      
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '10px' }}>
+            <div className="loading-spinner" />
+          </div>
+        ) : data && data.length > 0 ? (
+          <div style={{ fontSize: '10px', fontFamily: 'JetBrains Mono, monospace' }}>
+            {data.slice(0, 5).map((contest, i) => (
+              <div 
+                key={`${contest.name}-${i}`}
+                style={{ 
+                  padding: '4px 0',
+                  borderBottom: i < Math.min(data.length, 5) - 1 ? '1px solid var(--border-color)' : 'none'
+                }}
+              >
+                <div style={{ 
+                  color: 'var(--text-primary)', 
+                  fontWeight: '600',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
                 }}>
-                  {contest.isActive ? '● ACTIVE' : contest.timeUntil || ''}
-                </span>
+                  {contest.name}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
+                  <span style={{ color: getModeColor(contest.mode) }}>{contest.mode}</span>
+                  <span style={{ color: 'var(--text-muted)' }}>{formatDate(contest.start)}</span>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        ) : (
+          <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '10px', fontSize: '11px' }}>
+            No upcoming contests
+          </div>
+        )}
+      </div>
     </div>
   );
 };

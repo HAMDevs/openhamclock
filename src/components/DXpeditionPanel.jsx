@@ -1,6 +1,6 @@
 /**
  * DXpeditionPanel Component
- * Shows active and upcoming DXpeditions
+ * Shows active and upcoming DXpeditions (compact version)
  */
 import React from 'react';
 
@@ -16,68 +16,58 @@ export const DXpeditionPanel = ({ data, loading }) => {
   };
 
   return (
-    <div className="panel" style={{ padding: '12px' }}>
-      <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+    <div className="panel" style={{ padding: '8px', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div className="panel-header" style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        marginBottom: '6px',
+        fontSize: '11px'
+      }}>
         <span>🌍 DXPEDITIONS</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {loading && <div className="loading-spinner" />}
-          {data && (
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-              {data.active > 0 && <span style={{ color: 'var(--accent-green)' }}>{data.active} active</span>}
-              {data.active > 0 && data.upcoming > 0 && ' • '}
-              {data.upcoming > 0 && <span style={{ color: 'var(--accent-cyan)' }}>{data.upcoming} upcoming</span>}
-            </span>
-          )}
-        </div>
+        {data && (
+          <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+            {data.active > 0 && <span style={{ color: 'var(--accent-green)' }}>{data.active} active</span>}
+          </span>
+        )}
       </div>
       
-      <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-        {data?.dxpeditions?.length > 0 ? (
-          data.dxpeditions.slice(0, 15).map((exp, idx) => {
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '10px' }}>
+            <div className="loading-spinner" />
+          </div>
+        ) : data?.dxpeditions?.length > 0 ? (
+          data.dxpeditions.slice(0, 4).map((exp, idx) => {
             const style = getStatusStyle(exp);
             return (
               <div key={idx} style={{ 
-                padding: '6px 8px',
-                marginBottom: '4px',
+                padding: '4px 6px',
+                marginBottom: '3px',
                 background: style.bg,
-                borderLeft: `3px solid ${style.border}`,
-                borderRadius: '4px',
-                fontSize: '12px',
+                borderLeft: `2px solid ${style.border}`,
+                borderRadius: '3px',
+                fontSize: '11px',
                 fontFamily: 'JetBrains Mono, monospace'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ color: 'var(--accent-amber)', fontWeight: '700', fontSize: '13px' }}>{exp.callsign}</span>
-                  <span style={{ color: style.color, fontSize: '10px' }}>
-                    {exp.isActive ? '● NOW' : exp.isUpcoming ? 'UPCOMING' : 'PAST'}
+                  <span style={{ color: 'var(--accent-amber)', fontWeight: '700' }}>{exp.callsign}</span>
+                  <span style={{ color: style.color, fontSize: '9px' }}>
+                    {exp.isActive ? '● NOW' : 'SOON'}
                   </span>
                 </div>
-                <div style={{ color: 'var(--text-secondary)', marginTop: '2px' }}>
+                <div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>
                   {exp.entity}
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '3px' }}>
-                  <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{exp.dates}</span>
-                  <div style={{ display: 'flex', gap: '6px', fontSize: '10px' }}>
-                    {exp.bands && <span style={{ color: 'var(--accent-purple)' }}>{exp.bands.split(' ').slice(0, 3).join(' ')}</span>}
-                    {exp.modes && <span style={{ color: 'var(--accent-cyan)' }}>{exp.modes.split(' ').slice(0, 2).join(' ')}</span>}
-                  </div>
                 </div>
               </div>
             );
           })
         ) : (
-          <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>
-            {loading ? 'Loading DXpeditions...' : 'No DXpedition data available'}
+          <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '10px', fontSize: '11px' }}>
+            No DXpeditions
           </div>
         )}
       </div>
-      
-      {data && (
-        <div style={{ marginTop: '6px', textAlign: 'right', fontSize: '9px' }}>
-          <a href="https://www.ng3k.com/misc/adxo.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
-            NG3K ADXO Calendar
-          </a>
-        </div>
-      )}
     </div>
   );
 };
