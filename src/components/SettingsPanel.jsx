@@ -4,6 +4,11 @@
  */
 import React, { useState, useEffect } from 'react';
 import { calculateGridSquare } from '../utils/geo.js';
+<<<<<<< Updated upstream
+=======
+import { useTranslation, Trans } from 'react-i18next';
+import { LANGUAGES } from '../lang/i18n.js';
+>>>>>>> Stashed changes
 
 export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
   const [callsign, setCallsign] = useState(config?.callsign || '');
@@ -13,6 +18,14 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
   const [theme, setTheme] = useState(config?.theme || 'dark');
   const [layout, setLayout] = useState(config?.layout || 'modern');
   const [dxClusterSource, setDxClusterSource] = useState(config?.dxClusterSource || 'dxspider-proxy');
+<<<<<<< Updated upstream
+=======
+  const { t, i18n } = useTranslation();
+  
+  // Layer controls
+  const [layers, setLayers] = useState([]);
+  const [activeTab, setActiveTab] = useState('station');
+>>>>>>> Stashed changes
 
   useEffect(() => {
     if (config) {
@@ -311,9 +324,158 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
                   fontWeight: theme === t ? '600' : '400'
                 }}
               >
+<<<<<<< Updated upstream
                 {t === 'dark' ? '🌙' : t === 'light' ? '☀️' : t === 'legacy' ? '💻' : '🪟'} {t.charAt(0).toUpperCase() + t.slice(1)}
               </button>
             ))}
+=======
+                <option value="dxspider-proxy">{t('station.settings.dx.option1')}</option>
+                <option value="hamqth">{t('station.settings.dx.option2')}</option>
+                <option value="dxwatch">{t('station.settings.dx.option3')}</option>
+                <option value="auto">{t('station.settings.dx.option4')}</option>
+              </select>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                {t('station.settings.dx.describe')}
+              </div>
+            </div>
+
+            {/* Language */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                🌐 {t('station.settings.language')}
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
+                {LANGUAGES.map((lang) => (
+                  <button
+                    key={lang.code}
+                    onClick={() => i18n.changeLanguage(lang.code)}
+                    style={{
+                      padding: '8px 6px',
+                      background: i18n.language === lang.code || (i18n.language && i18n.language.startsWith(lang.code)) 
+                        ? 'rgba(0, 221, 255, 0.2)' 
+                        : 'var(--bg-tertiary)',
+                      border: `1px solid ${i18n.language === lang.code || (i18n.language && i18n.language.startsWith(lang.code))
+                        ? 'var(--accent-cyan)' 
+                        : 'var(--border-color)'}`,
+                      borderRadius: '6px',
+                      color: i18n.language === lang.code || (i18n.language && i18n.language.startsWith(lang.code))
+                        ? 'var(--accent-cyan)' 
+                        : 'var(--text-secondary)',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      fontWeight: i18n.language === lang.code || (i18n.language && i18n.language.startsWith(lang.code)) ? '600' : '400',
+                      textAlign: 'center'
+                    }}
+                  >
+                    {lang.flag} {lang.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Map Layers Tab */}
+        {activeTab === 'layers' && (
+          <div>
+            {layers.length > 0 ? (
+              layers.map(layer => (
+                <div key={layer.id} style={{
+                  background: 'var(--bg-tertiary)',
+                  border: `1px solid ${layer.enabled ? 'var(--accent-amber)' : 'var(--border-color)'}`,
+                  borderRadius: '8px',
+                  padding: '14px',
+                  marginBottom: '12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <label style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      cursor: 'pointer',
+                      flex: 1
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={layer.enabled}
+                        onChange={() => handleToggleLayer(layer.id)}
+                        style={{
+                          width: '18px',
+                          height: '18px',
+                          cursor: 'pointer'
+                        }}
+                      />
+                      <span style={{ fontSize: '18px' }}>{layer.icon}</span>
+                      <div>
+                        <div style={{
+                          color: layer.enabled ? 'var(--accent-amber)' : 'var(--text-primary)',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          fontFamily: 'JetBrains Mono, monospace'
+                        }}>
+                          {layer.name}
+                        </div>
+                        {layer.description && (
+                          <div style={{
+                            fontSize: '11px',
+                            color: 'var(--text-muted)',
+                            marginTop: '2px'
+                          }}>
+                            {layer.description}
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                    <span style={{
+                      fontSize: '11px',
+                      textTransform: 'uppercase',
+                      color: 'var(--text-secondary)',
+                      background: 'var(--bg-hover)',
+                      padding: '2px 8px',
+                      borderRadius: '3px'
+                    }}>
+                      {layer.category}
+                    </span>
+                  </div>
+
+                  {layer.enabled && (
+                    <div style={{ paddingLeft: '38px', marginTop: '12px' }}>
+                      <label style={{
+                        display: 'block',
+                        fontSize: '11px',
+                        color: 'var(--text-muted)',
+                        marginBottom: '6px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px'
+                      }}>
+                        Opacity: {Math.round(layer.opacity * 100)}%
+                      </label>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={layer.opacity * 100}
+                        onChange={(e) => handleOpacityChange(layer.id, parseFloat(e.target.value) / 100)}
+                        style={{
+                          width: '100%',
+                          cursor: 'pointer'
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div style={{
+                textAlign: 'center',
+                padding: '40px 20px',
+                color: 'var(--text-muted)',
+                fontSize: '13px'
+              }}>
+                No map layers available
+              </div>
+            )}
+>>>>>>> Stashed changes
           </div>
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
             {themeDescriptions[theme]}
