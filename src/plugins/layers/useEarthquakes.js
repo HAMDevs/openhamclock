@@ -79,10 +79,25 @@ export function useLayer({ enabled = false, opacity = 0.9, map = null }) {
       const coords = quake.geometry.coordinates;
       const props = quake.properties;
       const mag = props.mag;
-      const lat = coords[1];
-      const lon = coords[0];
+      
+      // GeoJSON standard format: [longitude, latitude, elevation]
+      // For Santa Lucía, Peru: [-70.5639, -15.6136, 206.486]
+      //   coords[0] = -70.5639 = Longitude (W)
+      //   coords[1] = -15.6136 = Latitude (S)
+      //   coords[2] = 206.486 = Depth (km)
+      const lat = coords[1];  // Latitude (y-axis)
+      const lon = coords[0];  // Longitude (x-axis)
       const depth = coords[2];
       const quakeId = quake.id;
+
+      // Debug logging with detailed info
+      console.log(`🌋 Earthquake ${quakeId}:`, {
+        place: props.place,
+        mag: mag,
+        geojson: `[${coords[0]}, ${coords[1]}, ${coords[2]}]`,
+        extracted: `lat=${lat}, lon=${lon}`,
+        marker: `L.marker([${lat}, ${lon}])`
+      });
 
       currentQuakeIds.add(quakeId);
 
@@ -134,7 +149,7 @@ export function useLayer({ enabled = false, opacity = 0.9, map = null }) {
         iconAnchor: [size/2, size/2]
       });
       
-      console.log('Creating earthquake marker:', quakeId, 'M' + mag.toFixed(1), 'at', lat, lon, 'size:', size + 'px', 'color:', color);
+      console.log('Creating earthquake marker:', quakeId, 'M' + mag.toFixed(1), 'at lat:', lat, 'lon:', lon, 'size:', size + 'px', 'color:', color);
       const circle = L.marker([lat, lon], { 
         icon, 
         opacity,
