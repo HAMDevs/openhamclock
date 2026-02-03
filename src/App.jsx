@@ -259,11 +259,18 @@ const App = () => {
     setDxLocation({ lat: coords.lat, lon: coords.lon });
   }, []);
 
-  // Format times
+  // Format times — use explicit timezone if configured (fixes privacy browsers like Librewolf
+  // that spoof timezone to UTC via privacy.resistFingerprinting)
   const utcTime = currentTime.toISOString().substr(11, 8);
-  const localTime = currentTime.toLocaleTimeString('en-US', { hour12: use12Hour });
   const utcDate = currentTime.toISOString().substr(0, 10);
-  const localDate = currentTime.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const localTimeOpts = { hour12: use12Hour };
+  const localDateOpts = { weekday: 'short', month: 'short', day: 'numeric' };
+  if (config.timezone) {
+    localTimeOpts.timeZone = config.timezone;
+    localDateOpts.timeZone = config.timezone;
+  }
+  const localTime = currentTime.toLocaleTimeString('en-US', localTimeOpts);
+  const localDate = currentTime.toLocaleDateString('en-US', localDateOpts);
 
   // Scale for small screens
   const [scale, setScale] = useState(1);

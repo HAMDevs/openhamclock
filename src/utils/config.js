@@ -16,6 +16,7 @@ export const DEFAULT_CONFIG = {
   units: 'imperial', // 'imperial' or 'metric'
   theme: 'dark', // 'dark', 'light', 'legacy', or 'retro'
   layout: 'modern', // 'modern' or 'classic'
+  timezone: '', // IANA timezone (e.g. 'America/Regina') — empty = browser default
   use12Hour: true,
   showSatellites: true,
   showPota: true,
@@ -104,6 +105,7 @@ export const loadConfig = () => {
       units: serverConfig.units || config.units,
       theme: serverConfig.theme || config.theme,
       layout: serverConfig.layout || config.layout,
+      timezone: serverConfig.timezone || config.timezone,
       use12Hour: serverConfig.timeFormat === '12',
       showSatellites: serverConfig.showSatellites ?? config.showSatellites,
       showPota: serverConfig.showPota ?? config.showPota,

@@ -14,6 +14,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
   const [lon, setLon] = useState(config?.location?.lon || 0);
   const [theme, setTheme] = useState(config?.theme || 'dark');
   const [layout, setLayout] = useState(config?.layout || 'modern');
+  const [timezone, setTimezone] = useState(config?.timezone || '');
   const [dxClusterSource, setDxClusterSource] = useState(config?.dxClusterSource || 'dxspider-proxy');
   const { t, i18n } = useTranslation();
   
@@ -28,6 +29,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
       setLon(config.location?.lon || 0);
       setTheme(config.theme || 'dark');
       setLayout(config.layout || 'modern');
+      setTimezone(config.timezone || '');
       setDxClusterSource(config.dxClusterSource || 'dxspider-proxy');
       if (config.location?.lat && config.location?.lon) {
         setGridSquare(calculateGridSquare(config.location.lat, config.location.lon));
@@ -148,6 +150,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
       location: { lat: parseFloat(lat), lon: parseFloat(lon) },
       theme,
       layout,
+      timezone,
       dxClusterSource
     });
     onClose();
@@ -451,6 +454,112 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave }) => {
             </div>
 
             {/* DX Cluster Source */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                🕐 Timezone
+              </label>
+              <select
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  background: 'var(--bg-tertiary)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '6px',
+                  color: timezone ? 'var(--accent-green)' : 'var(--text-muted)',
+                  fontSize: '14px',
+                  fontFamily: 'JetBrains Mono, monospace',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="">Auto (browser default)</option>
+                <optgroup label="North America">
+                  <option value="America/New_York">Eastern (New York)</option>
+                  <option value="America/Chicago">Central (Chicago)</option>
+                  <option value="America/Denver">Mountain (Denver)</option>
+                  <option value="America/Los_Angeles">Pacific (Los Angeles)</option>
+                  <option value="America/Anchorage">Alaska</option>
+                  <option value="Pacific/Honolulu">Hawaii</option>
+                  <option value="America/Phoenix">Arizona (no DST)</option>
+                  <option value="America/Regina">Saskatchewan (no DST)</option>
+                  <option value="America/Halifax">Atlantic (Halifax)</option>
+                  <option value="America/St_Johns">Newfoundland</option>
+                  <option value="America/Toronto">Ontario (Toronto)</option>
+                  <option value="America/Winnipeg">Manitoba (Winnipeg)</option>
+                  <option value="America/Edmonton">Alberta (Edmonton)</option>
+                  <option value="America/Vancouver">BC (Vancouver)</option>
+                  <option value="America/Mexico_City">Mexico City</option>
+                </optgroup>
+                <optgroup label="Europe">
+                  <option value="Europe/London">UK (London)</option>
+                  <option value="Europe/Dublin">Ireland (Dublin)</option>
+                  <option value="Europe/Paris">Central Europe (Paris)</option>
+                  <option value="Europe/Berlin">Germany (Berlin)</option>
+                  <option value="Europe/Rome">Italy (Rome)</option>
+                  <option value="Europe/Madrid">Spain (Madrid)</option>
+                  <option value="Europe/Amsterdam">Netherlands (Amsterdam)</option>
+                  <option value="Europe/Brussels">Belgium (Brussels)</option>
+                  <option value="Europe/Stockholm">Sweden (Stockholm)</option>
+                  <option value="Europe/Helsinki">Finland (Helsinki)</option>
+                  <option value="Europe/Athens">Greece (Athens)</option>
+                  <option value="Europe/Bucharest">Romania (Bucharest)</option>
+                  <option value="Europe/Moscow">Russia (Moscow)</option>
+                  <option value="Europe/Warsaw">Poland (Warsaw)</option>
+                  <option value="Europe/Zurich">Switzerland (Zurich)</option>
+                  <option value="Europe/Lisbon">Portugal (Lisbon)</option>
+                </optgroup>
+                <optgroup label="Asia & Pacific">
+                  <option value="Asia/Tokyo">Japan (Tokyo)</option>
+                  <option value="Asia/Seoul">Korea (Seoul)</option>
+                  <option value="Asia/Shanghai">China (Shanghai)</option>
+                  <option value="Asia/Hong_Kong">Hong Kong</option>
+                  <option value="Asia/Taipei">Taiwan (Taipei)</option>
+                  <option value="Asia/Singapore">Singapore</option>
+                  <option value="Asia/Kolkata">India (Kolkata)</option>
+                  <option value="Asia/Dubai">UAE (Dubai)</option>
+                  <option value="Asia/Riyadh">Saudi Arabia (Riyadh)</option>
+                  <option value="Asia/Tehran">Iran (Tehran)</option>
+                  <option value="Asia/Bangkok">Thailand (Bangkok)</option>
+                  <option value="Asia/Jakarta">Indonesia (Jakarta)</option>
+                  <option value="Asia/Manila">Philippines (Manila)</option>
+                  <option value="Australia/Sydney">Australia Eastern (Sydney)</option>
+                  <option value="Australia/Adelaide">Australia Central (Adelaide)</option>
+                  <option value="Australia/Perth">Australia Western (Perth)</option>
+                  <option value="Pacific/Auckland">New Zealand (Auckland)</option>
+                  <option value="Pacific/Fiji">Fiji</option>
+                </optgroup>
+                <optgroup label="South America">
+                  <option value="America/Sao_Paulo">Brazil (São Paulo)</option>
+                  <option value="America/Argentina/Buenos_Aires">Argentina (Buenos Aires)</option>
+                  <option value="America/Santiago">Chile (Santiago)</option>
+                  <option value="America/Bogota">Colombia (Bogotá)</option>
+                  <option value="America/Lima">Peru (Lima)</option>
+                  <option value="America/Caracas">Venezuela (Caracas)</option>
+                </optgroup>
+                <optgroup label="Africa">
+                  <option value="Africa/Cairo">Egypt (Cairo)</option>
+                  <option value="Africa/Johannesburg">South Africa (Johannesburg)</option>
+                  <option value="Africa/Lagos">Nigeria (Lagos)</option>
+                  <option value="Africa/Nairobi">Kenya (Nairobi)</option>
+                  <option value="Africa/Casablanca">Morocco (Casablanca)</option>
+                </optgroup>
+                <optgroup label="Other">
+                  <option value="UTC">UTC</option>
+                  <option value="Atlantic/Reykjavik">Iceland (Reykjavik)</option>
+                  <option value="Atlantic/Azores">Azores</option>
+                  <option value="Indian/Maldives">Maldives</option>
+                  <option value="Indian/Mauritius">Mauritius</option>
+                </optgroup>
+              </select>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                Set this if your local time shows incorrectly (e.g. same as UTC).
+                Privacy browsers like Librewolf may spoof your timezone.
+                {timezone ? '' : ' Currently using browser default.'}
+              </div>
+            </div>
+
+            {/* DX Cluster Source - original */}
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 {t('station.settings.dx.title')}

@@ -55,8 +55,9 @@ RUN chown -R openhamclock:nodejs /app
 # Switch to non-root user
 USER openhamclock
 
-# Expose port
+# Expose ports (3000 = web, 2237 = WSJT-X UDP)
 EXPOSE 3000
+EXPOSE 2237/udp
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

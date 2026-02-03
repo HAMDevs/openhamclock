@@ -3600,6 +3600,9 @@ app.get('/api/config', (req, res) => {
     // Whether config is incomplete (show setup wizard)
     configIncomplete: CONFIG.callsign === 'N0CALL' || !CONFIG.gridSquare,
     
+    // Server timezone (from TZ env var or system)
+    timezone: process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+    
     // Feature availability
     features: {
       spaceWeather: true,
