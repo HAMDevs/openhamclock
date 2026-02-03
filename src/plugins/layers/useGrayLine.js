@@ -346,7 +346,7 @@ export function useLayer({ enabled = false, opacity = 0.5, map = null }) {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showTwilight, setShowTwilight] = useState(true);
   const [showEnhancedZone, setShowEnhancedZone] = useState(true);
-  const [twilightOpacity, setTwilightOpacity] = useState(0.3);
+  const [twilightOpacity, setTwilightOpacity] = useState(0.5);
   
   const controlRef = useRef(null);
   const updateIntervalRef = useRef(null);
@@ -414,8 +414,8 @@ export function useLayer({ enabled = false, opacity = 0.5, map = null }) {
           </div>
           
           <div style="margin-bottom: 8px;">
-            <label style="display: block; margin-bottom: 3px;">Twilight Opacity: <span id="twilight-opacity-value">30</span>%</label>
-            <input type="range" id="grayline-twilight-opacity" min="10" max="70" value="30" step="5" style="width: 100%;" />
+            <label style="display: block; margin-bottom: 3px;">Twilight Opacity: <span id="twilight-opacity-value">50</span>%</label>
+            <input type="range" id="grayline-twilight-opacity" min="20" max="100" value="50" step="5" style="width: 100%;" />
           </div>
           
           <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #555; font-size: 9px; opacity: 0.7;">
