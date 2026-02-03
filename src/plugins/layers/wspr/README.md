@@ -1,10 +1,10 @@
 # WSPR Propagation Heatmap Plugin
 
-**Version:** 1.3.0  
+**Version:** 1.4.1  
 **Category:** Propagation  
 **Icon:** 📡  
 **Author:** OpenHamClock Contributors  
-**Last Updated:** 2026-02-03 (v1.3.0 Release)
+**Last Updated:** 2026-02-03 (v1.4.1 Bug Fix Release)
 
 ---
 
@@ -14,7 +14,43 @@ The WSPR (Weak Signal Propagation Reporter) Heatmap Plugin provides real-time vi
 
 ## Features Implemented
 
-### ✅ v1.3.0 - Advanced Analytics & Filtering (Latest)
+### ✅ v1.4.1 - Bug Fixes (Latest)
+
+#### **Fixed Issues**
+- **CTRL+Drag to Move**: Panels now require holding CTRL key while dragging
+  - Cursor changes to "grab" hand when CTRL is held
+  - Prevents accidental moves when using dropdowns/sliders
+  - Visual feedback with "Hold CTRL and drag to reposition" tooltip
+- **Persistent Panel Positions**: Positions now saved and restored correctly
+  - Panel positions persist when toggling plugin off/on
+  - Each panel has independent localStorage key
+  - Positions restored on next plugin enable
+- **Proper Cleanup on Disable**: All controls removed when plugin is disabled
+  - Fixed "WSPR Activity" popup remaining after disable
+  - Fixed multiple popup spawning issue
+  - All controls properly cleaned up: filters, stats, legend, chart, heatmap
+  - Console logging for debugging cleanup process
+
+### ✅ v1.4.0 - Interactive Heatmap & Draggable Panels
+
+#### **Draggable Control Panels**
+- All control panels can be repositioned by holding CTRL and dragging
+- Panel positions saved to localStorage
+- Positions persist across browser sessions
+- Independent position for each panel (filters, stats, legend, chart)
+
+#### **Working Heatmap Visualization**
+- Toggle heatmap view with checkbox in filter panel
+- Density-based hot spot visualization
+- Color-coded by activity level:
+  - 🔴 Red: Very high activity
+  - 🟠 Orange: High activity
+  - 🟡 Yellow: Moderate activity
+  - 🔵 Blue: Low activity
+- Click hot spots to see station count and coordinates
+- Radius scales with activity intensity
+
+### ✅ v1.3.0 - Advanced Analytics & Filtering
 
 #### **Advanced Filter Controls (v1.2.0)**
 - **Band Selector Dropdown**: Filter by specific bands (160m-6m)

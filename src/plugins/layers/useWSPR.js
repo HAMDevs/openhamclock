@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 
 /**
- * WSPR Propagation Heatmap Plugin v1.3.0
+ * WSPR Propagation Heatmap Plugin v1.4.1
  * 
  * Advanced Features:
  * - Great circle curved path lines between transmitters and receivers
@@ -10,10 +10,13 @@ import { useState, useEffect, useRef } from 'react';
  * - Band selector dropdown (v1.2.0)
  * - Time range slider (15min - 6hr) (v1.2.0)
  * - SNR threshold filter (v1.2.0)
- * - Hot spot density heatmap (v1.3.0)
+ * - Hot spot density heatmap (v1.4.0)
  * - Band activity chart (v1.3.0)
  * - Propagation score indicator (v1.3.0)
  * - Best DX paths highlighting (v1.3.0)
+ * - Draggable control panels with CTRL+drag (v1.4.0)
+ * - Persistent panel positions (v1.4.1)
+ * - Proper cleanup on disable (v1.4.1)
  * - Statistics display (total stations, spots)
  * - Signal strength legend
  * 
@@ -29,7 +32,7 @@ export const metadata = {
   category: 'propagation',
   defaultEnabled: false,
   defaultOpacity: 0.7,
-  version: '1.3.0'
+  version: '1.4.1'
 };
 
 // Convert grid square to lat/lon
@@ -151,7 +154,7 @@ function calculatePropagationScore(spots) {
   return Math.round(snrScore + countScore + strongScore);
 }
 
-// Make control panel draggable and save position
+// Make control panel draggable with CTRL+drag and save position
 function makeDraggable(element, storageKey) {
   if (!element) return;
   
@@ -176,14 +179,34 @@ function makeDraggable(element, storageKey) {
     element.style.bottom = 'auto';
   }
   
-  // Add drag handle
-  element.style.cursor = 'move';
-  element.title = 'Drag to reposition';
+  // Add drag hint
+  element.title = 'Hold CTRL and drag to reposition';
   
   let isDragging = false;
   let startX, startY, startLeft, startTop;
   
+  // Update cursor based on CTRL key
+  const updateCursor = (e) => {
+    if (e.ctrlKey) {
+      element.style.cursor = 'grab';
+    } else {
+      element.style.cursor = 'default';
+    }
+  };
+  
+  element.addEventListener('mouseenter', updateCursor);
+  element.addEventListener('mousemove', updateCursor);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Control') updateCursor(e);
+  });
+  document.addEventListener('keyup', (e) => {
+    if (e.key === 'Control') updateCursor(e);
+  });
+  
   element.addEventListener('mousedown', function(e) {
+    // Only allow dragging with CTRL key
+    if (!e.ctrlKey) return;
+    
     // Only allow dragging from empty areas (not inputs/selects)
     if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') {
       return;
@@ -195,6 +218,7 @@ function makeDraggable(element, storageKey) {
     startLeft = element.offsetLeft;
     startTop = element.offsetTop;
     
+    element.style.cursor = 'grabbing';
     element.style.opacity = '0.8';
     e.preventDefault();
   });
@@ -213,6 +237,7 @@ function makeDraggable(element, storageKey) {
     if (isDragging) {
       isDragging = false;
       element.style.opacity = '1';
+      updateCursor(e);
       
       // Save position
       const position = {
@@ -517,12 +542,11 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null }) {
     setPathLayers(newPaths);
     setMarkerLayers(newMarkers);
     
-    // Update statistics control
+    // Update statistics control - only create once
     if (statsControl && map) {
       try {
         map.removeControl(statsControl);
       } catch (e) {}
-      setStatsControl(null);
     }
     
     const StatsControl = L.Control.extend({
@@ -559,18 +583,25 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null }) {
       }
     });
     
-    const stats = new StatsControl();
-    map.addControl(stats);
-    setStatsControl(stats);
+    // Only add stats control if enabled
+    if (enabled) {
+      const stats = new StatsControl();
+      map.addControl(stats);
+      setStatsControl(stats);
+    }
     
-    // Make stats draggable
-    setTimeout(() => {
-      const container = document.querySelector('.wspr-stats');
-      if (container) makeDraggable(container, 'wspr-stats-position');
-    }, 150);
+    // Make stats draggable - only if enabled
+    if (enabled) {
+      setTimeout(() => {
+        const container = document.querySelector('.wspr-stats');
+        if (container) {
+          makeDraggable(container, 'wspr-stats-position');
+        }
+      }, 150);
+    }
     
-    // Add legend
-    if (!legendControl && map) {
+    // Add legend - only once and only if enabled
+    if (!legendControl && map && enabled) {
       const LegendControl = L.Control.extend({
         options: { position: 'bottomright' },
         onAdd: function() {
@@ -609,8 +640,8 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null }) {
       }, 150);
     }
     
-    // Add band activity chart
-    if (!chartControl && map && limitedData.length > 0) {
+    // Add band activity chart - only once and only if enabled
+    if (!chartControl && map && limitedData.length > 0 && enabled) {
       const bandCounts = {};
       limitedData.forEach(spot => {
         const band = spot.band || 'Unknown';
@@ -784,23 +815,77 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null }) {
     };
   }, [enabled, showHeatmap, wsprData, map, opacity, snrThreshold, heatmapLayer]);
 
-  // Cleanup controls on disable
+  // Cleanup controls on disable - FIX: properly remove all controls and layers
   useEffect(() => {
     if (!enabled && map) {
-      [filterControl, legendControl, statsControl, chartControl, heatmapLayer].forEach(control => {
-        if (control) {
-          try {
-            map.removeControl(control);
-          } catch (e) {}
+      console.log('[WSPR] Plugin disabled - cleaning up all controls and layers');
+      
+      // Remove filter control
+      if (filterControl) {
+        try {
+          map.removeControl(filterControl);
+          console.log('[WSPR] Removed filter control');
+        } catch (e) {
+          console.error('[WSPR] Error removing filter control:', e);
         }
+        setFilterControl(null);
+      }
+      
+      // Remove legend control
+      if (legendControl) {
+        try {
+          map.removeControl(legendControl);
+          console.log('[WSPR] Removed legend control');
+        } catch (e) {
+          console.error('[WSPR] Error removing legend control:', e);
+        }
+        setLegendControl(null);
+      }
+      
+      // Remove stats control
+      if (statsControl) {
+        try {
+          map.removeControl(statsControl);
+          console.log('[WSPR] Removed stats control');
+        } catch (e) {
+          console.error('[WSPR] Error removing stats control:', e);
+        }
+        setStatsControl(null);
+      }
+      
+      // Remove chart control
+      if (chartControl) {
+        try {
+          map.removeControl(chartControl);
+          console.log('[WSPR] Removed chart control');
+        } catch (e) {
+          console.error('[WSPR] Error removing chart control:', e);
+        }
+        setChartControl(null);
+      }
+      
+      // Remove heatmap layer
+      if (heatmapLayer) {
+        try {
+          map.removeLayer(heatmapLayer);
+          console.log('[WSPR] Removed heatmap layer');
+        } catch (e) {
+          console.error('[WSPR] Error removing heatmap layer:', e);
+        }
+        setHeatmapLayer(null);
+      }
+      
+      // Clear all paths and markers
+      pathLayers.forEach(layer => {
+        try { map.removeLayer(layer); } catch (e) {}
       });
-      setFilterControl(null);
-      setLegendControl(null);
-      setStatsControl(null);
-      setChartControl(null);
-      setHeatmapLayer(null);
+      markerLayers.forEach(layer => {
+        try { map.removeLayer(layer); } catch (e) {}
+      });
+      setPathLayers([]);
+      setMarkerLayers([]);
     }
-  }, [enabled, map, filterControl, legendControl, statsControl, chartControl, heatmapLayer]);
+  }, [enabled, map, filterControl, legendControl, statsControl, chartControl, heatmapLayer, pathLayers, markerLayers]);
 
   // Update opacity
   useEffect(() => {
