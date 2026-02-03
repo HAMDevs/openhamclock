@@ -121,28 +121,34 @@ function splitAtDateLine(points) {
   if (span > 350) {
     console.log('🔍 Full-world span detected, splitting at ±180°');
     
-    // Find where the line crosses from negative to positive (near ±180°)
-    // Split into: [points with lon < 0] and [points with lon >= 0]
-    const westSegment = [];  // Points from -180 to ~0
-    const eastSegment = [];  // Points from ~0 to 180
+    // Strategy: Create two segments that meet at ±180° longitude
+    // Segment 1: Western hemisphere (-180° to slightly past 0°)
+    // Segment 2: Eastern hemisphere (slightly before 0° to +180°)
     
-    for (let i = 0; i < points.length; i++) {
-      const lon = points[i][1];
-      
-      // Split around longitude 0 or at the extremes
-      // Points near -180 and near +180 should be in different segments
-      if (lon < 0) {
-        westSegment.push(points[i]);
-      } else {
-        eastSegment.push(points[i]);
-      }
-    }
+    const westSegment = [];  // Points from -180° to ~0°
+    const eastSegment = [];  // Points from ~0° to +180°
+    
+    // Sort points by longitude to ensure correct ordering
+    const sortedPoints = [...points].sort((a, b) => a[1] - b[1]);
+    
+    // Find the midpoint longitude (should be around 0°)
+    const midIndex = Math.floor(sortedPoints.length / 2);
+    
+    // Split at midpoint, with some overlap
+    westSegment.push(...sortedPoints.slice(0, midIndex + 1));
+    eastSegment.push(...sortedPoints.slice(midIndex));
     
     const segments = [];
     if (westSegment.length >= 2) segments.push(westSegment);
     if (eastSegment.length >= 2) segments.push(eastSegment);
     
-    console.log('🔍 Split into segments:', segments.map(s => s.length), 'points');
+    console.log('🔍 Split into segments:', segments.map(s => {
+      const lons = s.map(p => p[1]);
+      return {
+        points: s.length,
+        lonRange: `${Math.min(...lons).toFixed(1)} to ${Math.max(...lons).toFixed(1)}`
+      };
+    }));
     return segments;
   }
   
@@ -628,10 +634,16 @@ export function useLayer({ enabled = false, opacity = 0.5, map = null }) {
             // Create polygon from upper segment + reversed lower segment
             const enhancedZone = [...upperSeg, ...lowerSeg.reverse()];
             
+            // Debug: Show longitude range of this polygon
+            const polyLons = enhancedZone.map(p => p[1]);
+            const polyMinLon = Math.min(...polyLons);
+            const polyMaxLon = Math.max(...polyLons);
+            
             console.log(`🔶 Creating Enhanced DX polygon segment ${i+1}/${numSegments}:`, {
               upperPoints: upperSeg.length,
               lowerPoints: lowerSeg.length,
-              totalPolygonPoints: enhancedZone.length
+              totalPolygonPoints: enhancedZone.length,
+              lonRange: `${polyMinLon.toFixed(1)} to ${polyMaxLon.toFixed(1)}`
             });
             
             const enhancedPoly = L.polygon(enhancedZone, {
