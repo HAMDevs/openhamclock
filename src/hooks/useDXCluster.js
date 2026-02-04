@@ -34,8 +34,7 @@ export const useDXCluster = (source = 'auto', filters = {}) => {
       // Exclude list - hide matching calls - match the call as a prefix
       if (filters.excludeList?.length > 0) {
         const isExcluded = filters.excludeList.some(exc =>
-          spot.call?.toUpperCase().startsWith(exc.toUpperCase()) ||
-          spot.spotter?.toUpperCase().startsWith(exc.toUpperCase())
+          spot.call?.toUpperCase().startsWith(exc.toUpperCase())
         );
         if (isExcluded) return false;
       }
