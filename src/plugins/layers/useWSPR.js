@@ -877,8 +877,7 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null }) {
     setTimeout(() => {
       const statsContainer = document.querySelector('.wspr-stats');
       if (statsContainer && enabled) {
-        statsContainer.innerHTML = `
-          <div style="font-weight: bold; margin-bottom: 6px; font-size: 13px;">📊 WSPR Activity</div>
+        const contentHTML = `
           <div style="margin-bottom: 8px; padding: 6px; background: rgba(255,255,255,0.1); border-radius: 3px;">
             <div style="font-size: 10px; opacity: 0.8; margin-bottom: 2px;">Propagation Score</div>
             <div style="font-size: 18px; font-weight: bold; color: ${scoreColor};">${propScore}/100</div>
@@ -889,6 +888,19 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null }) {
           <div>Total: <span style="color: #00ff00;">${totalStations}</span></div>
           <div style="margin-top: 6px; font-size: 10px; opacity: 0.7;">Last ${timeWindow} min</div>
         `;
+        
+        // Check if minimize toggle has been added (content is wrapped)
+        const contentWrapper = statsContainer.querySelector('.wspr-panel-content');
+        if (contentWrapper) {
+          // Update only the content wrapper to preserve header and minimize button
+          contentWrapper.innerHTML = contentHTML;
+        } else {
+          // Initial render before minimize toggle is added
+          statsContainer.innerHTML = `
+            <div style="font-weight: bold; margin-bottom: 6px; font-size: 13px;">📊 WSPR Activity</div>
+            ${contentHTML}
+          `;
+        }
       }
     }, 50);
     
@@ -902,7 +914,7 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null }) {
           bandCounts[band] = (bandCounts[band] || 0) + 1;
         });
         
-        let chartHTML = '<div style="font-weight: bold; margin-bottom: 6px; font-size: 11px;">📊 Band Activity</div>';
+        let chartContentHTML = '';
         
         Object.entries(bandCounts)
           .sort((a, b) => b[1] - a[1])
@@ -910,7 +922,7 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null }) {
           .forEach(([band, count]) => {
             const percentage = (count / limitedData.length) * 100;
             const barWidth = Math.max(percentage, 5);
-            chartHTML += `
+            chartContentHTML += `
               <div style="margin-bottom: 4px;">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
                   <span>${band}</span>
@@ -923,7 +935,18 @@ export function useLayer({ enabled = false, opacity = 0.7, map = null }) {
             `;
           });
         
-        chartContainer.innerHTML = chartHTML;
+        // Check if minimize toggle has been added (content is wrapped)
+        const contentWrapper = chartContainer.querySelector('.wspr-panel-content');
+        if (contentWrapper) {
+          // Update only the content wrapper to preserve header and minimize button
+          contentWrapper.innerHTML = chartContentHTML;
+        } else {
+          // Initial render before minimize toggle is added
+          chartContainer.innerHTML = `
+            <div style="font-weight: bold; margin-bottom: 6px; font-size: 11px;">📊 Band Activity</div>
+            ${chartContentHTML}
+          `;
+        }
       }
     }, 50);
     
