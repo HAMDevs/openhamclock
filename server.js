@@ -2283,23 +2283,27 @@ function fetchRBNSpotsRealtime(userCallsign, collectSeconds = 10, port = 7000) {
     client.setEncoding('utf8'); // Ensure proper encoding
     
     client.on('data', (data) => {
-      console.log(`[RBN] Received ${data.length} bytes of data`);
+      console.log(`[RBN] Received ${data.length} bytes: "${data.replace(/\r/g, '\\r').replace(/\n/g, '\\n').substring(0, 200)}"`);
       dataBuffer += data;
+      
+      // Check for authentication prompt in buffer (might not have newline yet)
+      if (!authenticated && dataBuffer.includes('Please enter your call:')) {
+        console.log(`[RBN] Sending callsign: ${userCallsign}`);
+        client.write(`${userCallsign}\r\n`);
+        authenticated = true;
+        dataBuffer = ''; // Clear buffer after auth
+        return;
+      }
+      
       const lines = dataBuffer.split('\n');
       dataBuffer = lines.pop() || ''; // Keep incomplete line in buffer
+      
+      console.log(`[RBN] Split into ${lines.length} lines, buffer has ${dataBuffer.length} chars`);
       
       for (const line of lines) {
         // Debug: log raw lines
         if (line.trim()) {
-          console.log(`[RBN] Raw: ${line.substring(0, 120)}`);
-        }
-        
-        // Handle authentication prompt
-        if (line.includes('Please enter your call:') && !authenticated) {
-          console.log(`[RBN] Sending callsign: ${userCallsign}`);
-          client.write(`${userCallsign}\r\n`);
-          authenticated = true;
-          continue;
+          console.log(`[RBN] Line: "${line.trim().substring(0, 120)}"`);
         }
         
         // Start collection timer after authentication is complete
