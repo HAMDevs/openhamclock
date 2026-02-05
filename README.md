@@ -68,6 +68,7 @@ npm run dev
   - [Weather](#weather)
   - [DE / DX Location Panels](#de--dx-location-panels)
   - [Header Bar](#header-bar)
+  - [Analog Clock](#analog-clock)
 - [Themes and Layouts](#themes-and-layouts)
 - [Map Layers and Plugins](#map-layers-and-plugins)
 - [Languages](#languages)
@@ -486,6 +487,24 @@ The persistent bar across the top of the dashboard provides at-a-glance informat
 - **Donate** — Link to support the project.
 - **Settings** — Opens the settings modal.
 - **Fullscreen** — Toggle fullscreen mode (great for dedicated shack displays).
+
+---
+
+### Analog Clock
+
+A classic analog clock display showing local time with additional station information.
+
+**What it shows:**
+
+- **Clock face** — Round analog clock with hour, minute, and second hands. Major tick marks every 5 minutes, minor ticks every minute, with hour numbers 1-12.
+- **Day of week** — Displayed above the clock on the left (e.g., "Mon", "Tue").
+- **Date** — Displayed above the clock on the right (e.g., "Feb 5").
+- **Sunrise time** — Displayed below the clock on the left with a sun symbol.
+- **Sunset time** — Displayed below the clock on the right with a moon symbol.
+
+**How to use it:** The clock automatically sizes to fit whatever panel size you give it. In the dockable layout, you can add it via the "+" button and resize the panel as desired. A larger panel gives you a bigger, more readable clock face.
+
+**Availability:** Always available in the dockable layout via the "Add Panel" menu. In the classic layout, enable it by setting `CLASSIC_ANALOG_CLOCK=true` in your `.env` file (disabled by default to keep the classic layout compact).
 
 ---
 
