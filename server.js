@@ -273,9 +273,78 @@ function logErrorOnce(category, message) {
 // Uses file-based storage - configure STATS_FILE env var for Railway volumes
 // Default: ./data/stats.json (local) or /data/stats.json (Railway volume)
 
-const STATS_FILE = process.env.STATS_FILE || (
-  fs.existsSync('/data') ? '/data/stats.json' : path.join(__dirname, 'data', 'stats.json')
-);
+// Determine best location for stats file with write permission check
+function getStatsFilePath() {
+  console.log('[Stats] === Storage Detection ===');
+  console.log('[Stats] Process UID:', process.getuid?.() ?? 'N/A (Windows)');
+  console.log('[Stats] Process GID:', process.getgid?.() ?? 'N/A (Windows)');
+  console.log('[Stats] __dirname:', __dirname);
+  console.log('[Stats] STATS_FILE env:', process.env.STATS_FILE || '(not set)');
+  
+  // If explicitly set via env var, use that
+  if (process.env.STATS_FILE) {
+    console.log(`[Stats] Using STATS_FILE env var: ${process.env.STATS_FILE}`);
+    return process.env.STATS_FILE;
+  }
+  
+  // Check /data directory status
+  console.log('[Stats] Checking /data directory:');
+  try {
+    const exists = fs.existsSync('/data');
+    console.log('[Stats]   exists:', exists);
+    if (exists) {
+      const stat = fs.statSync('/data');
+      console.log('[Stats]   isDirectory:', stat.isDirectory());
+      console.log('[Stats]   mode:', '0' + (stat.mode & 0o777).toString(8));
+      console.log('[Stats]   uid:', stat.uid, '/ gid:', stat.gid);
+      try {
+        const contents = fs.readdirSync('/data');
+        console.log('[Stats]   contents:', contents.length === 0 ? '(empty)' : contents.slice(0, 5).join(', '));
+      } catch (e) {
+        console.log('[Stats]   cannot list contents:', e.code);
+      }
+    }
+  } catch (e) {
+    console.log('[Stats]   error checking /data:', e.code, e.message);
+  }
+  
+  // List of paths to try in order of preference
+  const pathsToTry = [
+    '/data/stats.json',                           // Railway volume
+    path.join(__dirname, 'data', 'stats.json'),   // Local ./data subdirectory
+    '/tmp/openhamclock-stats.json'                // Temp (won't survive restarts but better than nothing)
+  ];
+  
+  for (const statsPath of pathsToTry) {
+    console.log(`[Stats] Trying: ${statsPath}`);
+    try {
+      const dir = path.dirname(statsPath);
+      
+      // Create directory if it doesn't exist
+      if (!fs.existsSync(dir)) {
+        console.log(`[Stats]   mkdir: ${dir}`);
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      
+      // Test write permission
+      const testFile = path.join(dir, '.write-test-' + Date.now());
+      console.log(`[Stats]   write test: ${testFile}`);
+      fs.writeFileSync(testFile, 'test');
+      fs.unlinkSync(testFile);
+      
+      console.log(`[Stats] ✓ SUCCESS: ${statsPath}`);
+      return statsPath;
+    } catch (err) {
+      console.log(`[Stats]   ✗ FAILED: ${err.code} - ${err.message}`);
+    }
+  }
+  
+  // No writable path found
+  console.log('[Stats] ⚠ No writable storage found - stats will be memory-only');
+  return null;
+}
+
+const STATS_FILE = getStatsFilePath();
 const STATS_SAVE_INTERVAL = 60000; // Save every 60 seconds
 
 // Load persistent stats from disk
@@ -293,6 +362,12 @@ function loadVisitorStats() {
     history: [],
     lastSaved: null
   };
+  
+  // No stats file configured - memory only mode
+  if (!STATS_FILE) {
+    console.log('[Stats] Running in memory-only mode');
+    return defaults;
+  }
   
   try {
     if (fs.existsSync(STATS_FILE)) {
@@ -325,7 +400,13 @@ function loadVisitorStats() {
 }
 
 // Save stats to disk
+let saveErrorCount = 0;
 function saveVisitorStats() {
+  // No stats file configured - memory only mode
+  if (!STATS_FILE) {
+    return;
+  }
+  
   try {
     const dir = path.dirname(STATS_FILE);
     if (!fs.existsSync(dir)) {
@@ -338,12 +419,21 @@ function saveVisitorStats() {
     };
     
     fs.writeFileSync(STATS_FILE, JSON.stringify(data, null, 2));
+    visitorStats.lastSaved = data.lastSaved; // Update in-memory too
+    saveErrorCount = 0; // Reset on success
     // Only log occasionally to avoid spam
     if (Math.random() < 0.1) {
       console.log(`[Stats] Saved - ${visitorStats.allTimeVisitors} all-time visitors, ${visitorStats.uniqueIPsToday.length} today`);
     }
   } catch (err) {
-    console.error('[Stats] Failed to save:', err.message);
+    saveErrorCount++;
+    // Only log first error and then every 10th to avoid spam
+    if (saveErrorCount === 1 || saveErrorCount % 10 === 0) {
+      console.error(`[Stats] Failed to save (attempt #${saveErrorCount}):`, err.message);
+      if (saveErrorCount === 1) {
+        console.error('[Stats] Stats will be kept in memory but won\'t persist across restarts');
+      }
+    }
   }
 }
 
@@ -5047,7 +5137,15 @@ function generateStatusDashboard() {
         <span class="info-value">${visitorStats.allTimeRequests.toLocaleString()}</span>
       </div>
       <div class="info-row">
-        <span class="info-label">Stats Last Saved</span>
+        <span class="info-label">Persistence</span>
+        <span class="info-value" style="color: ${visitorStats.lastSaved ? '#00ff88' : '#ff4466'}">${visitorStats.lastSaved ? '✓ Working' : '✗ Memory Only'}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Stats Location</span>
+        <span class="info-value" style="font-size: 0.75rem; color: #888">${STATS_FILE || 'Memory only (no writable storage)'}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Last Saved</span>
         <span class="info-value">${visitorStats.lastSaved ? new Date(visitorStats.lastSaved).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Not yet'}</span>
       </div>
     </div>
@@ -5086,8 +5184,8 @@ app.get('/api/health', (req, res) => {
       uptimeFormatted: `${Math.floor(process.uptime() / 86400)}d ${Math.floor((process.uptime() % 86400) / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m`,
       timestamp: new Date().toISOString(),
       persistence: {
-        enabled: true,
-        file: STATS_FILE,
+        enabled: !!STATS_FILE,
+        file: STATS_FILE || null,
         lastSaved: visitorStats.lastSaved
       },
       visitors: {
