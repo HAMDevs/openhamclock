@@ -4,12 +4,21 @@
  */
 import React from 'react';
 
+// Added all possible props passed from WorldMap
 export const PluginLayer = ({ plugin, enabled, opacity, map, callsign, locator, lowMemoryMode }) => {
-  // Call the plugin's hook (this is allowed because it's in a component)
-  const result = plugin.hook({ enabled, opacity, map, callsign, locator, lowMemoryMode });
   
-  // Plugin hook handles its own rendering to the map
-  // This component doesn't render anything to the DOM
+  // Use 'useLayer' if it exists (for OWM code) 
+  // or 'hook' (for older plugins)
+  const layerFunc = plugin.useLayer || plugin.hook;
+
+  if (typeof layerFunc === 'function') {
+    // We pass map, enabled, and opacity as individual arguments 
+    // to match your useLayer = (map, enabled, opacity) signature
+    layerFunc(map, enabled, opacity, { callsign, locator, lowMemoryMode });
+  } else {
+    console.warn(`Plugin ${plugin.metadata?.id} is missing a useLayer or hook function`);
+  }
+  
   return null;
 };
 
