@@ -582,20 +582,19 @@ export const WorldMap = ({
       const savedLayers = settings.layers || {};
 
       // Build initial states from localStorage
-		const initialStates = {};
-		availableLayers.forEach(layerDef => {
-		  // Fix: Check both localStorage and the default metadata
-		  const saved = savedLayers[layerDef.id] || {};
-		  initialStates[layerDef.id] = {
-		    enabled: saved.enabled ?? layerDef.defaultEnabled ?? false,
-		    opacity: saved.opacity ?? layerDef.defaultOpacity ?? 0.5
-		  };
-		});
-		
-		// IMPORTANT: Change the condition to ensure we always have the new layers
-		if (Object.keys(pluginLayerStates).length !== availableLayers.length) {
-		  setPluginLayerStates(initialStates);
-		}
+      const initialStates = {};
+      availableLayers.forEach(layerDef => {
+        // Use saved state if it exists, otherwise use defaults
+        if (savedLayers[layerDef.id]) {
+          initialStates[layerDef.id] = savedLayers[layerDef.id];
+        } else {
+          initialStates[layerDef.id] = {
+            enabled: layerDef.defaultEnabled,
+            opacity: layerDef.defaultOpacity
+          };
+        }
+      });
+
       // Initialize state ONLY on first mount (when empty)
       if (Object.keys(pluginLayerStates).length === 0) {
         console.log('Loading saved layer states:', initialStates);
