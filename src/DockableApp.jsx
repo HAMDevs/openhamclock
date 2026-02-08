@@ -242,6 +242,7 @@ export const DockableApp = ({
         hoveredSpot={hoveredSpot}
         leftSidebarVisible={true}
         rightSidebarVisible={true}
+        callsign={config.callsign}
         lowMemoryMode={config.lowMemoryMode}
       />
     </div>

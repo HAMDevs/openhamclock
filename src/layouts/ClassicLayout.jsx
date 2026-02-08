@@ -517,6 +517,7 @@ export default function ClassicLayout(props) {
             onToggleSatellites={toggleSatellites}
             hoveredSpot={hoveredSpot}
             hideOverlays={true}
+            callsign={config.callsign}
             lowMemoryMode={config.lowMemoryMode}
           />
           {/* DX Lock button overlay */}
@@ -886,6 +887,7 @@ export default function ClassicLayout(props) {
             onToggleSatellites={toggleSatellites}
             hoveredSpot={hoveredSpot}
             hideOverlays={true}
+            callsign={config.callsign}
             lowMemoryMode={config.lowMemoryMode}
           />
           <div style={{
