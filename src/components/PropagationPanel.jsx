@@ -62,6 +62,7 @@ export const PropagationPanel = ({ propagation, loading, bandConditions }) => {
 
   const { solarData, distance, currentBands, currentHour, hourlyPredictions, muf, luf, ionospheric, dataSource } = propagation;
   const hasRealData = ionospheric?.method === 'direct' || ionospheric?.method === 'interpolated';
+  const isDaytime = new Date().getUTCHours() >= 6 && new Date().getUTCHours() <= 18;
   
   // Heat map colors - supports both schemes
   // Stoplight: green=good, red=bad (intuitive)
@@ -125,10 +126,21 @@ export const PropagationPanel = ({ propagation, loading, bandConditions }) => {
       </div>
       
       {viewMode === 'bands' ? (
-        /* Band Conditions Grid View */
+        /* Band Conditions Grid View - N0NBH Data */
         <div style={{ padding: '4px' }}>
+          {/* Day/Night toggle indicator */}
+          {bandConditions?.extras?.source && (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '4px', fontSize: '10px' }}>
+              <span style={{ color: isDaytime ? '#ffcc00' : 'var(--text-muted)' }}>
+                ☀ Day {isDaytime ? '(now)' : ''}
+              </span>
+              <span style={{ color: !isDaytime ? '#88aaff' : 'var(--text-muted)' }}>
+                ☾ Night {!isDaytime ? '(now)' : ''}
+              </span>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
-            {(bandConditions?.data || []).slice(0, 13).map((band, idx) => {
+            {(bandConditions?.data || []).slice(0, 12).map((band, idx) => {
               const style = getBandStyle(band.condition);
               return (
                 <div key={idx} style={{ 
@@ -137,19 +149,70 @@ export const PropagationPanel = ({ propagation, loading, bandConditions }) => {
                   borderRadius: '4px',
                   padding: '6px 2px',
                   textAlign: 'center'
-                }}>
+                }}
+                title={`${band.band}: Day=${band.day || band.condition} Night=${band.night || band.condition}`}
+                >
                   <div style={{ fontFamily: 'Orbitron, monospace', fontSize: '13px', fontWeight: '700', color: style.color }}>
                     {band.band}
                   </div>
                   <div style={{ fontSize: '9px', fontWeight: '600', color: style.color, marginTop: '2px', opacity: 0.8 }}>
                     {band.condition}
                   </div>
+                  {/* Day/Night mini indicator when both are available */}
+                  {band.day && band.night && band.day !== band.night && (
+                    <div style={{ fontSize: '7px', color: 'var(--text-muted)', marginTop: '1px' }}>
+                      ☀{band.day.charAt(0)} ☾{band.night.charAt(0)}
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
-          <div style={{ marginTop: '6px', fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center' }}>
-            SFI {solarData?.sfi} • K {solarData?.kIndex} • General conditions for all paths
+          
+          {/* VHF Conditions */}
+          {(bandConditions?.vhfConditions || []).length > 0 && (
+            <div style={{ marginTop: '6px', padding: '4px', background: 'var(--bg-tertiary)', borderRadius: '4px' }}>
+              <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '3px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>VHF Conditions</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                {bandConditions.vhfConditions.map((v, i) => {
+                  const isOpen = !v.condition?.toLowerCase().includes('closed');
+                  const label = v.name === 'vhf-aurora' ? 'Aurora' 
+                    : v.name === 'E-Skip' ? `Es ${v.location?.replace('_', ' ').replace('north america', 'NA').replace('europe', 'EU').replace('6m', '6m EU').replace('4m', '4m EU')}`
+                    : v.name;
+                  return (
+                    <span key={i} style={{
+                      fontSize: '9px',
+                      padding: '1px 4px',
+                      borderRadius: '2px',
+                      background: isOpen ? 'rgba(0,255,136,0.15)' : 'rgba(255,255,255,0.05)',
+                      color: isOpen ? '#00ff88' : 'var(--text-muted)',
+                      border: `1px solid ${isOpen ? 'rgba(0,255,136,0.3)' : 'rgba(255,255,255,0.1)'}`
+                    }}>
+                      {label}: {isOpen ? v.condition : 'Closed'}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          
+          {/* Geomag + Signal Noise + Source */}
+          <div style={{ marginTop: '4px', fontSize: '10px', color: 'var(--text-muted)', textAlign: 'center' }}>
+            <span>SFI {solarData?.sfi} • K {solarData?.kIndex}</span>
+            {bandConditions?.extras?.geomagField && (
+              <span> • Geomag: <span style={{ 
+                color: bandConditions.extras.geomagField === 'QUIET' ? 'var(--accent-green)' : 
+                       bandConditions.extras.geomagField === 'ACTIVE' || bandConditions.extras.geomagField === 'STORM' ? 'var(--accent-red)' : 
+                       'var(--accent-amber)' 
+              }}>{bandConditions.extras.geomagField}</span></span>
+            )}
+            {bandConditions?.extras?.signalNoise && (
+              <span> • Noise: {bandConditions.extras.signalNoise}</span>
+            )}
+          </div>
+          <div style={{ fontSize: '9px', color: 'var(--text-muted)', textAlign: 'center', marginTop: '2px', opacity: 0.6 }}>
+            {bandConditions?.extras?.source === 'N0NBH' ? 'Source: N0NBH / NOAA' : 'General conditions for all paths'}
+            {bandConditions?.extras?.updated && ` • ${bandConditions.extras.updated}`}
           </div>
         </div>
       ) : (
