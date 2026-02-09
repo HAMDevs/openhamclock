@@ -290,7 +290,7 @@ const App = () => {
       alignItems: 'center',
       overflow: 'hidden'
     }}>
-      <RigProvider>
+      <RigProvider rigConfig={config.rigControl || { enabled: false, host: 'http://localhost', port: 5555 }}>
         {config.layout === 'dockable' ? (
           <DockableLayout
             key={layoutResetKey}

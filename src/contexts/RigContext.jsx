@@ -3,7 +3,8 @@ import { getModeFromFreq } from '../utils/bandPlan.js';
 
 
 // Default config
-const RIG_DAEMON_URL = 'http://localhost:5555';
+// Default config (fallback)
+const DEFAULT_RIG_URL = 'http://localhost:5555';
 const POLL_INTERVAL = 1000;
 
 
@@ -17,7 +18,7 @@ export const useRig = () => {
     return context;
 };
 
-export const RigProvider = ({ children }) => {
+export const RigProvider = ({ children, rigConfig }) => {
     const [rigState, setRigState] = useState({
         connected: false,
         freq: 0,
@@ -29,10 +30,20 @@ export const RigProvider = ({ children }) => {
 
     const [error, setError] = useState(null);
 
+    // Construct URL from config or default
+    const rigUrl = rigConfig && rigConfig.host && rigConfig.port
+        ? `${rigConfig.host}:${rigConfig.port}`
+        : DEFAULT_RIG_URL;
+
     // Poll Daemon
     const pollRig = useCallback(async () => {
+        if (rigConfig && !rigConfig.enabled) {
+            setRigState(prev => ({ ...prev, connected: false }));
+            return;
+        }
+
         try {
-            const resp = await fetch(`${RIG_DAEMON_URL}/status`);
+            const resp = await fetch(`${rigUrl}/status`);
             if (!resp.ok) throw new Error('Daemon unreachable');
 
             const data = await resp.json();
@@ -60,8 +71,9 @@ export const RigProvider = ({ children }) => {
 
     // Command: Set Frequency
     const setFreq = useCallback(async (freq) => {
+        if (!rigConfig?.enabled) return;
         try {
-            await fetch(`${RIG_DAEMON_URL}/freq`, {
+            await fetch(`${rigUrl}/freq`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ freq })
@@ -71,12 +83,13 @@ export const RigProvider = ({ children }) => {
         } catch (err) {
             console.error('Failed to set freq:', err);
         }
-    }, [pollRig]);
+    }, [pollRig, rigUrl, rigConfig]);
 
     // Command: Set Mode
     const setMode = useCallback(async (mode) => {
+        if (!rigConfig?.enabled) return;
         try {
-            await fetch(`${RIG_DAEMON_URL}/mode`, {
+            await fetch(`${rigUrl}/mode`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mode })
@@ -85,15 +98,16 @@ export const RigProvider = ({ children }) => {
         } catch (err) {
             console.error('Failed to set mode:', err);
         }
-    }, [pollRig]);
+    }, [pollRig, rigUrl, rigConfig]);
 
     // Command: PTT
     const setPTT = useCallback(async (enabled) => {
+        if (!rigConfig?.enabled) return;
         // Optimistic update for immediate UI response
         setRigState(prev => ({ ...prev, ptt: enabled }));
 
         try {
-            await fetch(`${RIG_DAEMON_URL}/ptt`, {
+            await fetch(`${rigUrl}/ptt`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ptt: enabled })
@@ -165,6 +179,7 @@ export const RigProvider = ({ children }) => {
 
     const value = {
         ...rigState,
+        enabled: rigConfig?.enabled,
         error,
         setFreq,
         setMode,

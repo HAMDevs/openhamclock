@@ -7,16 +7,16 @@
  * 2. Server config (from .env file)
  * 3. Default values
  */
-  // Map offset for MODIS Gibs imagery to attempt to load latest global planetary coverage
-  const getGIBSUrl = (offsetDays = 0) => {
-    // Subtracts offsetDays and 12 hours to ensure a complete global pass
-    const date = new Date(Date.now() - (offsetDays * 24 + 12) * 60 * 60 * 1000);
-    const dateString = date.toISOString().split('T')[0];
-    
-    return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/${dateString}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`;
-  };
-  // *Offset delay end code here *
-  export const DEFAULT_CONFIG = {
+// Map offset for MODIS Gibs imagery to attempt to load latest global planetary coverage
+const getGIBSUrl = (offsetDays = 0) => {
+  // Subtracts offsetDays and 12 hours to ensure a complete global pass
+  const date = new Date(Date.now() - (offsetDays * 24 + 12) * 60 * 60 * 1000);
+  const dateString = date.toISOString().split('T')[0];
+
+  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/${dateString}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`;
+};
+// *Offset delay end code here *
+export const DEFAULT_CONFIG = {
   callsign: 'N0CALL',
   headerSize: 1.0, // Float multiplies base px size (0.1 to 2.0)
   locator: '',
@@ -26,6 +26,11 @@
   propagation: {
     mode: 'SSB',    // SSB, CW, FT8, FT4, WSPR, JS8, RTTY, PSK31
     power: 100      // TX power in watts
+  },
+  rigControl: {
+    enabled: false,
+    host: 'http://localhost',
+    port: 5555
   },
   theme: 'dark', // 'dark', 'light', 'legacy', or 'retro'
   layout: 'modern', // 'modern' or 'classic'
@@ -88,7 +93,7 @@ export const fetchServerConfig = async () => {
 export const loadConfig = () => {
   // Start with defaults
   let config = { ...DEFAULT_CONFIG };
-  
+
   // Try to load from localStorage FIRST (user's saved settings)
   let localConfig = null;
   try {
@@ -100,7 +105,7 @@ export const loadConfig = () => {
   } catch (e) {
     console.error('Error loading config from localStorage:', e);
   }
-  
+
   // If user has localStorage config, use it (this is the priority)
   if (localConfig) {
     config = {
@@ -110,9 +115,10 @@ export const loadConfig = () => {
       location: localConfig.location || config.location,
       defaultDX: localConfig.defaultDX || config.defaultDX,
       panels: { ...config.panels, ...localConfig.panels },
-      refreshIntervals: { ...config.refreshIntervals, ...localConfig.refreshIntervals }
+      refreshIntervals: { ...config.refreshIntervals, ...localConfig.refreshIntervals },
+      rigControl: { ...config.rigControl, ...(localConfig.rigControl || {}) }
     };
-  } 
+  }
   // Only use server config if NO localStorage exists (first-time user)
   else if (serverConfig) {
     // Server config provides initial defaults for new users
@@ -141,15 +147,15 @@ export const loadConfig = () => {
       panels: { ...config.panels, ...serverConfig.panels }
     };
   }
-  
+
   // Mark if config needs setup (no callsign set anywhere)
   config.configIncomplete = (config.callsign === 'N0CALL' || !config.locator);
-  
+
   // Always inject version from server (not a user preference — server is source of truth)
   if (serverConfig?.version) {
     config.version = serverConfig.version;
   }
-  
+
   return config;
 };
 

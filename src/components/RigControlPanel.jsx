@@ -5,7 +5,7 @@ import { useRig } from '../contexts/RigContext';
 
 const RigControlPanel = () => {
     const { t } = useTranslation();
-    const { connected, freq, mode, ptt, setFreq, setMode, setPTT, error, tuneTo } = useRig();
+    const { connected, enabled, freq, mode, ptt, setFreq, setMode, setPTT, error, tuneTo } = useRig();
     const [inputFreq, setInputFreq] = useState('');
 
     // Format frequency to MHz (e.g., 14.074.000)
@@ -23,6 +23,18 @@ const RigControlPanel = () => {
         }
     };
 
+    // Determine status
+    let statusColor = 'red';
+    let statusTitle = t('app.rigControl.disconnected');
+
+    if (!enabled) {
+        statusColor = 'grey';
+        statusTitle = t('app.rigControl.disabled');
+    } else if (connected) {
+        statusColor = 'green';
+        statusTitle = t('app.rigControl.connected');
+    }
+
     return (
         <div className="panel rig-control-panel">
             <div className="panel-header">
@@ -30,7 +42,7 @@ const RigControlPanel = () => {
                     <span className="icon">📻</span> {t('app.rigControl.title')}
                 </h3>
                 <div className="panel-controls">
-                    <span className={`status-led ${connected ? 'green' : 'red'}`} title={connected ? t('app.rigControl.connected') : t('app.rigControl.disconnected')} />
+                    <span className={`status-led ${statusColor}`} title={statusTitle} />
                 </div>
             </div>
 
@@ -52,8 +64,9 @@ const RigControlPanel = () => {
                             placeholder={t('app.rigControl.setFreqPlaceholder')}
                             value={inputFreq}
                             onChange={e => setInputFreq(e.target.value)}
+                            disabled={!enabled}
                         />
-                        <button type="submit">{t('app.rigControl.set')}</button>
+                        <button type="submit" disabled={!enabled}>{t('app.rigControl.set')}</button>
                     </form>
 
                     <div className="ptt-control">
@@ -63,6 +76,7 @@ const RigControlPanel = () => {
                             onMouseUp={() => setPTT(false)}
                             onTouchStart={() => setPTT(true)}
                             onTouchEnd={() => setPTT(false)}
+                            disabled={!enabled}
                         >
                             {t('app.rigControl.ptt')}
                         </button>
@@ -136,6 +150,7 @@ const RigControlPanel = () => {
         }
         .status-led.green { background: var(--accent-green); box-shadow: 0 0 5px var(--accent-green); }
         .status-led.red { background: var(--accent-red); box-shadow: 0 0 5px var(--accent-red); }
+        .status-led.grey { background: var(--text-muted); box-shadow: none; }
         .error-banner {
             background: var(--accent-red);
             color: #fff;
