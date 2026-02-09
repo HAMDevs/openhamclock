@@ -39,6 +39,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
   // Layer controls
   const [layers, setLayers] = useState([]);
   const [activeTab, setActiveTab] = useState('station');
+  const [ctrlPressed, setCtrlPressed] = useState(false);
 
   // Profile management state
   const [profiles, setProfilesList] = useState({});
@@ -96,6 +97,42 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
       return () => clearInterval(interval);
     }
   }, [isOpen, activeTab]);
+
+  // Track CTRL key state
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Control') setCtrlPressed(true);
+    };
+    const handleKeyUp = (e) => {
+      if (e.key === 'Control') setCtrlPressed(false);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Reset all popup positions for a plugin
+  const resetPopupPositions = (layerId) => {
+    const storageKeys = {
+      'lightning': ['lightning-stats-position', 'lightning-proximity-position'],
+      'wspr': ['wspr-filter-position', 'wspr-stats-position', 'wspr-legend-position', 'wspr-chart-position'],
+      'rbn': ['rbn-panel-position'],
+      'grayline': ['grayline-position']
+    };
+
+    const keys = storageKeys[layerId] || [];
+    keys.forEach(key => localStorage.removeItem(key));
+    
+    // Reload the page to apply position resets
+    if (keys.length > 0) {
+      window.location.reload();
+    }
+  };
 
   const handleGridChange = (grid) => {
     setGridSquare(grid.toUpperCase());
@@ -1178,6 +1215,28 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                           cursor: 'pointer'
                         }}
                       />
+                      
+                      {/* CTRL+Click Reset Button - Hidden unless CTRL is pressed */}
+                      {ctrlPressed && ['lightning', 'wspr', 'rbn', 'grayline'].includes(layer.id) && (
+                        <button
+                          onClick={() => resetPopupPositions(layer.id)}
+                          style={{
+                            marginTop: '12px',
+                            padding: '8px 12px',
+                            background: 'var(--accent-red)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            textTransform: 'uppercase',
+                            width: '100%'
+                          }}
+                        >
+                          🔄 RESET POPUPS
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
