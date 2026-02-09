@@ -257,12 +257,65 @@ const FlrigAdapter = {
 
 
 // ==========================================
+// ADAPTER: UNIFIED API
+// ==========================================
+
+// ==========================================
+// ADAPTER: MOCK (SIMULATION)
+// ==========================================
+const MockAdapter = {
+  init: () => {
+    console.log('[Mock] Initializing Simulation Mode...');
+    state.connected = true;
+    state.freq = 14074000;
+    state.mode = 'USB';
+    state.width = 2400;
+    state.ptt = false;
+    state.lastUpdate = Date.now();
+
+    // Simulate polling updates (just keeping timestamp fresh)
+    setInterval(() => {
+      state.lastUpdate = Date.now();
+    }, 1000);
+  },
+
+  setFreq: (freq, cb) => {
+    console.log(`[Mock] SET FREQ: ${freq}`);
+    state.freq = parseInt(freq);
+    if (cb) cb(null);
+  },
+
+  setMode: (mode, cb) => {
+    console.log(`[Mock] SET MODE: ${mode}`);
+    state.mode = mode;
+    if (cb) cb(null);
+  },
+
+  setPTT: (ptt, cb) => {
+    console.log(`[Mock] SET PTT: ${ptt}`);
+    state.ptt = !!ptt;
+    if (cb) cb(null);
+  },
+
+  tune: () => {
+    console.log('[Mock] TUNE COMMAND RECEIVED');
+    console.log('[Mock] Simulating tuner cycle (3s)...');
+    setTimeout(() => {
+      console.log('[Mock] TUNE COMPLETED');
+    }, 3000);
+  }
+};
+
+// ==========================================
 // UNIFIED API
 // ==========================================
 
 // Initialize selected adapter
+// Initialize selected adapter
 if (CONFIG.radio.type === 'flrig') {
   FlrigAdapter.init();
+} else if (CONFIG.radio.type === 'mock') {
+  MockAdapter.init();
 } else {
   RigaAdapter.init();
 }
@@ -305,6 +358,11 @@ app.post('/freq', (req, res) => {
 
       res.json({ success: true });
     });
+  } else if (CONFIG.radio.type === 'mock') {
+    MockAdapter.setFreq(freq, (err) => {
+      if (req.body.tune) MockAdapter.tune();
+      res.json({ success: true });
+    });
   } else {
     RigaAdapter.send(`F ${freq}`, (err, val) => {
       if (err) return res.status(500).json({ error: err.message });
@@ -326,6 +384,10 @@ app.post('/mode', (req, res) => {
     FlrigAdapter.setMode(mode, (err, val) => {
       if (err) return res.status(500).json({ error: err.message });
       setTimeout(FlrigAdapter.poll, 100);
+      res.json({ success: true });
+    });
+  } else if (CONFIG.radio.type === 'mock') {
+    MockAdapter.setMode(mode, (err) => {
       res.json({ success: true });
     });
   } else {
@@ -351,6 +413,10 @@ app.post('/ptt', (req, res) => {
     FlrigAdapter.setPTT(ptt, (err, val) => {
       if (err) return res.status(500).json({ error: err.message });
       state.ptt = !!ptt;
+      res.json({ success: true });
+    });
+  } else if (CONFIG.radio.type === 'mock') {
+    MockAdapter.setPTT(ptt, (err) => {
       res.json({ success: true });
     });
   } else {
