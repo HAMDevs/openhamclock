@@ -25,7 +25,8 @@ let CONFIG = {
     type: 'rigctld',
     host: '127.0.0.1',
     rigPort: 4532,
-    pollInterval: 1000
+    pollInterval: 1000,
+    pttEnabled: false
   }
 };
 
@@ -306,6 +307,12 @@ app.post('/mode', (req, res) => {
 
 app.post('/ptt', (req, res) => {
   const { ptt } = req.body;
+
+  if (ptt && !CONFIG.radio.pttEnabled) {
+    console.warn(`[API] PTT request BLOCKED by configuration (pttEnabled: false)`);
+    return res.status(403).json({ error: 'PTT disabled in configuration' });
+  }
+
   console.log(`[API] Setting PTT: ${ptt}`);
 
   if (CONFIG.radio.type === 'flrig') {

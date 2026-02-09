@@ -33,10 +33,19 @@ Configuration is loaded from `rig-config.json`. A default file is provided:
     "type": "flrig",        // Options: "rigctld" or "flrig"
     "host": "127.0.0.1",
     "port": 12345,          // rigctld default: 4532, flrig default: 12345
-    "pollInterval": 1000    // How often to poll the radio (ms)
+    "pollInterval": 1000,   // How often to poll the radio (ms)
+    "pttEnabled": false     // Set to true to allow PTT commands
   }
 }
 ```
+
+### Configuration Options
+- **server.host**: IP to bind to (default 0.0.0.0)
+- **server.port**: Port to listen on (default 5555)
+- **radio.type**: `rigctld` (Hamlib) or `flrig`
+- **radio.host**: Hostname/IP of the rig control software
+- **radio.port**: Port of the rig control software
+- **radio.pttEnabled**: Set to `true` to allow PTT commands. Defaults to `false` for safety.
 
 ## Usage
 
