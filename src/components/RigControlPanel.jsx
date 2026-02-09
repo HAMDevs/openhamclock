@@ -5,7 +5,7 @@ import { useRig } from '../contexts/RigContext';
 
 const RigControlPanel = () => {
     const { t } = useTranslation();
-    const { connected, freq, mode, ptt, setFreq, setMode, setPTT, error } = useRig();
+    const { connected, freq, mode, ptt, setFreq, setMode, setPTT, error, tuneTo } = useRig();
     const [inputFreq, setInputFreq] = useState('');
 
     // Format frequency to MHz (e.g., 14.074.000)
@@ -17,9 +17,8 @@ const RigControlPanel = () => {
     const handleSubmitFreq = (e) => {
         e.preventDefault();
         if (inputFreq) {
-            // Input in MHz -> convert to Hz
-            const hz = parseFloat(inputFreq) * 1000000;
-            setFreq(hz);
+            // tuneTo handles parsing (MHz/kHz/Hz) and sets mode automatically via band plan
+            tuneTo(inputFreq);
             setInputFreq('');
         }
     };
