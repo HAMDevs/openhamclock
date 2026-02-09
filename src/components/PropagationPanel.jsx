@@ -3,8 +3,9 @@
  * Toggleable between heatmap chart, bar chart, and band conditions view
  */
 import React, { useState } from 'react';
+import { formatDistance } from '../utils/geo.js';
 
-export const PropagationPanel = ({ propagation, loading, bandConditions, forcedMode }) => {
+export const PropagationPanel = ({ propagation, loading, bandConditions, forcedMode, units = 'imperial' }) => {
   // Load view mode preference from localStorage
   const [internalViewMode, setViewMode] = useState(() => {
     try {
@@ -246,7 +247,7 @@ export const PropagationPanel = ({ propagation, loading, bandConditions, forcedM
             </div>
             <span style={{ color: hasRealData ? '#00ff88' : 'var(--text-muted)', fontSize: '10px' }}>
               {hasRealData 
-                ? `⌇ Iono: ${ionospheric?.source || 'ionosonde'}${ionospheric?.distance ? ` (${ionospheric.distance}km from path)` : ''}`
+                ? `⌇ Iono: ${ionospheric?.source || 'ionosonde'}${ionospheric?.distance ? ` (${formatDistance(ionospheric.distance, units)} from path)` : ''}`
                 : '⚡ estimated'
               }
             </span>
@@ -361,7 +362,7 @@ export const PropagationPanel = ({ propagation, loading, bandConditions, forcedM
                   </span>
                 </div>
                 <div style={{ color: 'var(--text-muted)' }}>
-                  {Math.round(distance || 0)}km • {ionospheric?.foF2 ? `foF2=${ionospheric.foF2}` : `SSN=${solarData?.ssn}`}
+                  {formatDistance(distance || 0, units)} • {ionospheric?.foF2 ? `foF2=${ionospheric.foF2}` : `SSN=${solarData?.ssn}`}
                 </div>
               </div>
             </div>

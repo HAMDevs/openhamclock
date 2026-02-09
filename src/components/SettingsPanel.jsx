@@ -30,6 +30,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
   const [dxClusterSource, setDxClusterSource] = useState(config?.dxClusterSource || 'dxspider-proxy');
   const [customDxCluster, setCustomDxCluster] = useState(config?.customDxCluster || { enabled: false, host: '', port: 7300 });
   const [lowMemoryMode, setLowMemoryMode] = useState(config?.lowMemoryMode || false);
+  const [units, setUnits] = useState(config?.units || 'imperial');
   const [satelliteSearch, setSatelliteSearch] = useState('');
   const { t, i18n } = useTranslation();
 
@@ -63,6 +64,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
       setDxClusterSource(config.dxClusterSource || 'dxspider-proxy');
       setCustomDxCluster(config.customDxCluster || { enabled: false, host: '', port: 7300 });
       setLowMemoryMode(config.lowMemoryMode || false);
+      setUnits(config.units || 'imperial');
       if (config.location?.lat && config.location?.lon) {
         setGridSquare(calculateGridSquare(config.location.lat, config.location.lon));
       }
@@ -189,7 +191,8 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
       timezone,
       dxClusterSource,
       customDxCluster,
-      lowMemoryMode
+      lowMemoryMode,
+      units
     });
     onClose();
   };
@@ -688,6 +691,52 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
                 {t('station.settings.timezone.describe')}
                 {timezone ? '' : t('station.settings.timezone.currentDefault')}
+              </div>
+            </div>
+
+            {/* Distance Units */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                📏 Distance Units
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => setUnits('imperial')}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    background: units === 'imperial' ? 'var(--accent-amber)' : 'var(--bg-tertiary)',
+                    border: `1px solid ${units === 'imperial' ? 'var(--accent-amber)' : 'var(--border-color)'}`,
+                    borderRadius: '6px',
+                    color: units === 'imperial' ? '#000' : 'var(--text-secondary)',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    fontWeight: units === 'imperial' ? '600' : '400'
+                  }}
+                >
+                  🇺🇸 Imperial (mi)
+                </button>
+                <button
+                  onClick={() => setUnits('metric')}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    background: units === 'metric' ? 'var(--accent-amber)' : 'var(--bg-tertiary)',
+                    border: `1px solid ${units === 'metric' ? 'var(--accent-amber)' : 'var(--border-color)'}`,
+                    borderRadius: '6px',
+                    color: units === 'metric' ? '#000' : 'var(--text-secondary)',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    fontWeight: units === 'metric' ? '600' : '400'
+                  }}
+                >
+                  🌍 Metric (km)
+                </button>
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                {units === 'imperial'
+                  ? 'Distances shown in miles throughout the application.'
+                  : 'Distances shown in kilometers throughout the application.'}
               </div>
             </div>
 

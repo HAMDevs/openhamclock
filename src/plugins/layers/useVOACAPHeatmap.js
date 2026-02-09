@@ -388,7 +388,7 @@ export function useLayer({ map, enabled, opacity, callsign, locator }) {
               <b style="color: ${color}">${band?.label || ''} Propagation</b><br>
               Reliability: <b>${cell.r}%</b><br>
               Grid: ${cell.lat.toFixed(0)}°, ${cell.lon.toFixed(0)}°<br>
-              Distance: ${haversineApprox(data.deLat, data.deLon, cell.lat, cell.lon)} km
+              Distance: ${formatDistanceApprox(haversineApprox(data.deLat, data.deLon, cell.lat, cell.lon))}
             </div>
           `);
         }
@@ -433,4 +433,13 @@ function haversineApprox(lat1, lon1, lat2, lon2) {
     Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
     Math.sin(dLon/2) * Math.sin(dLon/2);
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+}
+
+// Format distance using global units preference from config
+function formatDistanceApprox(km) {
+  try {
+    const cfg = JSON.parse(localStorage.getItem('openhamclock_config') || '{}');
+    if (cfg.units === 'metric') return `${km.toLocaleString()} km`;
+  } catch (e) {}
+  return `${Math.round(km * 0.621371).toLocaleString()} mi`;
 }

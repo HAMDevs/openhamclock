@@ -258,6 +258,7 @@ export default function ModernLayout(props) {
               propagation={propagation.data}
               loading={propagation.loading}
               bandConditions={bandConditions}
+              units={config.units}
             />
           )}
         </div>
@@ -289,6 +290,7 @@ export default function ModernLayout(props) {
           hoveredSpot={hoveredSpot}
           callsign={config.callsign}
           lowMemoryMode={config.lowMemoryMode}
+          units={config.units}
         />
         <div style={{
           position: 'absolute',

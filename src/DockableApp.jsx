@@ -296,6 +296,7 @@ export const DockableApp = ({
         rightSidebarVisible={true}
         callsign={config.callsign}
         lowMemoryMode={config.lowMemoryMode}
+        units={config.units}
       />
     </div>
   );
@@ -343,19 +344,19 @@ export const DockableApp = ({
         break;
 
       case 'propagation':
-        content = <PropagationPanel propagation={propagation.data} loading={propagation.loading} bandConditions={bandConditions} />;
+        content = <PropagationPanel propagation={propagation.data} loading={propagation.loading} bandConditions={bandConditions} units={config.units} />;
         break;
 
       case 'propagation-chart':
-        content = <PropagationPanel propagation={propagation.data} loading={propagation.loading} bandConditions={bandConditions} forcedMode="chart" />;
+        content = <PropagationPanel propagation={propagation.data} loading={propagation.loading} bandConditions={bandConditions} units={config.units} forcedMode="chart" />;
         break;
 
       case 'propagation-bars':
-        content = <PropagationPanel propagation={propagation.data} loading={propagation.loading} bandConditions={bandConditions} forcedMode="bars" />;
+        content = <PropagationPanel propagation={propagation.data} loading={propagation.loading} bandConditions={bandConditions} units={config.units} forcedMode="bars" />;
         break;
 
       case 'band-conditions':
-        content = <PropagationPanel propagation={propagation.data} loading={propagation.loading} bandConditions={bandConditions} forcedMode="bands" />;
+        content = <PropagationPanel propagation={propagation.data} loading={propagation.loading} bandConditions={bandConditions} units={config.units} forcedMode="bands" />;
         break;
 
       case 'band-health':
