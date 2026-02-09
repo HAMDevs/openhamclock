@@ -21,7 +21,8 @@ export const Header = ({
   onFullscreenToggle,
   isFullscreen,
   updateInProgress,
-  showUpdateButton
+  showUpdateButton,
+  pttActive
 }) => {
   return (
     <div style={{
@@ -52,6 +53,19 @@ export const Header = ({
           {config.callsign}
         </span>
         {config.version && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>v{config.version}</span>}
+        {pttActive && (
+          <div style={{
+            background: 'var(--accent-red)',
+            color: 'var(--text-primary)',
+            fontWeight: '900',
+            padding: '2px 6px',
+            borderRadius: '4px',
+            fontSize: '12px',
+            animation: 'pulse 1s infinite'
+          }}>
+            ON AIR
+          </div>
+        )}
       </div>
 
       {/* UTC Clock */}
@@ -59,8 +73,8 @@ export const Header = ({
         <span style={{ fontSize: '13px', color: 'var(--accent-cyan)', fontWeight: '600' }}>UTC</span>
         <span style={{
           fontSize: config.headerSize > 0.1 && config.headerSize <= 2
-              ? `${24 * config.headerSize}px`
-              : "24px",
+            ? `${24 * config.headerSize}px`
+            : "24px",
           fontWeight: '700',
           color: 'var(--accent-cyan)',
           fontFamily: 'JetBrains Mono, Consolas, monospace',
@@ -78,8 +92,8 @@ export const Header = ({
         <span style={{ fontSize: '13px', color: 'var(--accent-amber)', fontWeight: '600' }}>LOCAL</span>
         <span style={{
           fontSize: config.headerSize > 0.1 && config.headerSize <= 2
-              ? `${24 * config.headerSize}px`
-              : "24px",
+            ? `${24 * config.headerSize}px`
+            : "24px",
           fontWeight: '700',
           color: 'var(--accent-amber)',
           fontFamily: 'JetBrains Mono, Consolas, monospace',
@@ -99,18 +113,20 @@ export const Header = ({
           const windLabel = localWeather.data.windUnit || 'mph';
           return (
             <div title={`${localWeather.data.description} • Wind: ${localWeather.data.windSpeed} ${windLabel}`}>
-              <span style={{ marginRight: '3px', 
+              <span style={{
+                marginRight: '3px',
                 fontSize: config.headerSize > 0.1 && config.headerSize <= 2
                   ? `${12 * config.headerSize}px`
                   : "12px",
-               }}>
+              }}>
                 {localWeather.data.icon}
               </span>
-              <span style={{ color: 'var(--accent-cyan)', fontWeight: '600',
+              <span style={{
+                color: 'var(--accent-cyan)', fontWeight: '600',
                 fontSize: config.headerSize > 0.1 && config.headerSize <= 2
                   ? `${12 * config.headerSize}px`
                   : "12px",
-               }}>
+              }}>
                 {tempF}°F/{tempC}°C
               </span>
             </div>
@@ -140,11 +156,11 @@ export const Header = ({
         )}
         {bandConditions?.extras?.geomagField && (
           <div>
-            <span style={{ 
+            <span style={{
               fontSize: '10px',
-              color: bandConditions.extras.geomagField === 'QUIET' ? 'var(--accent-green)' : 
-                     bandConditions.extras.geomagField === 'ACTIVE' || bandConditions.extras.geomagField.includes('STORM') ? 'var(--accent-red)' : 
-                     'var(--accent-amber)',
+              color: bandConditions.extras.geomagField === 'QUIET' ? 'var(--accent-green)' :
+                bandConditions.extras.geomagField === 'ACTIVE' || bandConditions.extras.geomagField.includes('STORM') ? 'var(--accent-red)' :
+                  'var(--accent-amber)',
               fontWeight: '600'
             }}>
               {bandConditions.extras.geomagField}

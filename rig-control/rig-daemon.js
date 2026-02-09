@@ -1,0 +1,332 @@
+#!/usr/bin/env node
+/**
+ * OpenHamClock Rig Control Daemon
+ * 
+ * Bridges a local rigctld (TCP) OR flrig (XML-RPC) instance 
+ * to a local HTTP API that the OpenHamClock frontend can consume directly.
+ * 
+ * Usages:
+ *   node rig-daemon.js --type rigctld --rig-host 127.0.0.1 --rig-port 4532 --http-port 5555
+ *   node rig-daemon.js --type flrig   --rig-host 127.0.0.1 --rig-port 12345 --http-port 5555
+ */
+
+const express = require('express');
+const cors = require('cors');
+const net = require('net');
+const xmlrpc = require('xmlrpc');
+
+// Configuration Defaults
+const fs = require('fs');
+const path = require('path');
+
+let CONFIG = {
+  server: { host: '0.0.0.0', port: 5555 },
+  radio: {
+    type: 'rigctld',
+    host: '127.0.0.1',
+    rigPort: 4532,
+    pollInterval: 1000
+  }
+};
+
+// Load Config File
+const configPath = path.join(__dirname, 'rig-config.json');
+if (fs.existsSync(configPath)) {
+  try {
+    const fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    console.log(`[Config] Loaded configuration from ${configPath}`);
+
+    // Merge Server Config
+    if (fileConfig.server) {
+      CONFIG.server = { ...CONFIG.server, ...fileConfig.server };
+    }
+
+    // Merge Radio Config
+    if (fileConfig.radio) {
+      CONFIG.radio = { ...CONFIG.radio, ...fileConfig.radio };
+      // Map 'port' from config to 'rigPort' internal key if needed, or unify keys
+      if (fileConfig.radio.port) CONFIG.radio.rigPort = fileConfig.radio.port;
+    }
+  } catch (e) {
+    console.error(`[Config] Error loading ${configPath}:`, e.message);
+  }
+}
+
+// Legacy CLI Args (Prioritize over config file if provided)
+const ARGS = process.argv.slice(2);
+for (let i = 0; i < ARGS.length; i++) {
+  if (ARGS[i] === '--type') CONFIG.radio.type = ARGS[++i];
+  if (ARGS[i] === '--rig-host') CONFIG.radio.host = ARGS[++i];
+  if (ARGS[i] === '--rig-port') CONFIG.radio.rigPort = parseInt(ARGS[++i]);
+  if (ARGS[i] === '--http-port') CONFIG.server.port = parseInt(ARGS[++i]);
+}
+
+// Adjust default port if flrig and not manually set (heuristic)
+if (CONFIG.radio.type === 'flrig' && CONFIG.radio.rigPort === 4532 && !process.argv.includes('--rig-port') && !fs.existsSync(configPath)) {
+  CONFIG.radio.rigPort = 12345;
+}
+
+console.log(`[Config] Type: ${CONFIG.radio.type}`);
+console.log(`[Config] Rig: ${CONFIG.radio.host}:${CONFIG.radio.rigPort}`);
+console.log(`[Config] HTTP: ${CONFIG.server.port}`);
+
+
+// State
+const state = {
+  freq: 0,
+  mode: '',
+  width: 0,
+  ptt: false,
+  connected: false,
+  lastUpdate: 0
+};
+
+// Interface Definition
+const RIG = {
+  connect: () => { },
+  getFreq: (cb) => { },
+  getMode: (cb) => { }, // includes width
+  getPTT: (cb) => { },
+  setFreq: (freq, cb) => { },
+  setMode: (mode, cb) => { },
+  setPTT: (ptt, cb) => { }
+};
+
+// ==========================================
+// ADAPTER: RIGCTLD (TCP)
+// ==========================================
+const RigaAdapter = {
+  socket: null,
+  queue: [],
+  pending: null,
+
+  init: () => {
+    RigaAdapter.connect();
+    // Poll loop
+    setInterval(() => {
+      if (!state.connected || CONFIG.radio.type !== 'rigctld') return;
+      RigaAdapter.send('f');
+      RigaAdapter.send('m');
+      RigaAdapter.send('t');
+    }, CONFIG.radio.pollInterval);
+  },
+
+  connect: () => {
+    if (RigaAdapter.socket) return;
+    console.log(`[Rigctld] Connecting to ${CONFIG.radio.host}:${CONFIG.radio.rigPort}...`);
+    const s = new net.Socket();
+    s.connect(CONFIG.radio.rigPort, CONFIG.radio.host, () => {
+      console.log('[Rigctld] Connected');
+      state.connected = true;
+      RigaAdapter.socket = s;
+    });
+    s.on('data', (data) => {
+      const lines = data.toString().split('\n');
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        RigaAdapter.handleResponse(line.trim());
+      }
+    });
+    s.on('close', () => {
+      console.log('[Rigctld] Disconnected');
+      state.connected = false;
+      RigaAdapter.socket = null;
+      setTimeout(RigaAdapter.connect, 5000);
+    });
+    s.on('error', (err) => {
+      console.error(`[Rigctld] Error: ${err.message}`);
+      s.destroy();
+    });
+  },
+
+  send: (cmd, cb) => {
+    if (!RigaAdapter.socket) {
+      if (cb) cb(new Error('Not connected'));
+      return;
+    }
+    RigaAdapter.queue.push({ cmd, cb });
+    RigaAdapter.process();
+  },
+
+  process: () => {
+    if (RigaAdapter.pending || RigaAdapter.queue.length === 0 || !RigaAdapter.socket) return;
+    const req = RigaAdapter.queue.shift();
+    RigaAdapter.pending = req;
+    RigaAdapter.socket.write(req.cmd + '\n');
+  },
+
+  handleResponse: (line) => {
+    if (!RigaAdapter.pending) return;
+    const req = RigaAdapter.pending;
+    RigaAdapter.pending = null;
+
+    if (req.cmd === 'f' || req.cmd.startsWith('F')) {
+      state.freq = parseInt(line);
+    } else if (req.cmd === 'm' || req.cmd.startsWith('M')) {
+      const parts = line.split(' ');
+      state.mode = parts[0];
+      state.width = parseInt(parts[1] || '0');
+    } else if (req.cmd === 't' || req.cmd.startsWith('T')) {
+      state.ptt = (line === '1');
+    }
+
+    if (req.cb) req.cb(null, line);
+    state.lastUpdate = Date.now();
+    RigaAdapter.process();
+  }
+};
+
+// ==========================================
+// ADAPTER: FLRIG (XML-RPC)
+// ==========================================
+const FlrigAdapter = {
+  client: null,
+
+  init: () => {
+    FlrigAdapter.client = xmlrpc.createClient({ host: CONFIG.radio.host, port: CONFIG.radio.rigPort, path: '/' });
+    state.connected = true; // Assume connected as it's connectionless (HTTP), validation happens on poll
+    console.log('[Flrig] Client initialized (XML-RPC is connectionless)');
+
+    // Poll loop
+    setInterval(FlrigAdapter.poll, CONFIG.radio.pollInterval);
+  },
+
+  poll: () => {
+    // Get Freq
+    FlrigAdapter.client.methodCall('rig.get_vfo', [], (err, val) => {
+      if (err) {
+        if (state.connected) console.error('[Flrig] Poll Error:', err.message);
+        state.connected = false;
+      } else {
+        state.connected = true;
+        state.freq = parseFloat(val);
+        state.lastUpdate = Date.now();
+      }
+    });
+    // Get Mode
+    FlrigAdapter.client.methodCall('rig.get_mode', [], (err, val) => {
+      if (!err) state.mode = val;
+    });
+    // Get PTT
+    FlrigAdapter.client.methodCall('rig.get_ptt', [], (err, val) => {
+      if (!err) state.ptt = !!val;
+    });
+  },
+
+  setFreq: (freq, cb) => {
+    // flrig expects a double. If we pass an integer (e.g. 14000000), 
+    // the xmlrpc lib sends <int> and flrig throws a type error.
+    // We add a tiny fraction to force <double> serialization.
+    FlrigAdapter.client.methodCall('rig.set_frequency', [parseFloat(freq) + 0.1], cb);
+  },
+
+
+  setMode: (mode, cb) => {
+    // flrig set_mode just takes mode string
+    FlrigAdapter.client.methodCall('rig.set_mode', [mode], cb);
+  },
+
+  setPTT: (ptt, cb) => {
+    // flrig set_ptt takes integer 0 or 1
+    FlrigAdapter.client.methodCall('rig.set_ptt', [ptt ? 1 : 0], cb);
+  }
+};
+
+
+// ==========================================
+// UNIFIED API
+// ==========================================
+
+// Initialize selected adapter
+if (CONFIG.radio.type === 'flrig') {
+  FlrigAdapter.init();
+} else {
+  RigaAdapter.init();
+}
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+app.get('/status', (req, res) => {
+  res.json({
+    connected: state.connected,
+    freq: state.freq,
+    mode: state.mode,
+    width: state.width,
+    ptt: state.ptt,
+    timestamp: state.lastUpdate
+  });
+});
+
+app.post('/freq', (req, res) => {
+  const { freq } = req.body;
+  if (!freq) return res.status(400).json({ error: 'Missing freq' });
+
+  console.log(`[API] Setting Freq: ${freq}`);
+
+  if (CONFIG.radio.type === 'flrig') {
+    FlrigAdapter.setFreq(freq, (err, val) => {
+      if (err) return res.status(500).json({ error: err.message });
+      // Poll update immediately
+      setTimeout(FlrigAdapter.poll, 100);
+      res.json({ success: true });
+    });
+  } else {
+    RigaAdapter.send(`F ${freq}`, (err, val) => {
+      if (err) return res.status(500).json({ error: err.message });
+      setTimeout(() => RigaAdapter.send('f'), 100);
+      res.json({ success: true });
+    });
+  }
+});
+
+app.post('/mode', (req, res) => {
+  const { mode } = req.body;
+  if (!mode) return res.status(400).json({ error: 'Missing mode' });
+
+  // passband is optional, default usually 2400 for SSB (only used for rigctld)
+  const passband = req.body.passband || 0;
+  console.log(`[API] Setting Mode: ${mode}`);
+
+  if (CONFIG.radio.type === 'flrig') {
+    FlrigAdapter.setMode(mode, (err, val) => {
+      if (err) return res.status(500).json({ error: err.message });
+      setTimeout(FlrigAdapter.poll, 100);
+      res.json({ success: true });
+    });
+  } else {
+    RigaAdapter.send(`M ${mode} ${passband}`, (err, val) => {
+      if (err) return res.status(500).json({ error: err.message });
+      setTimeout(() => RigaAdapter.send('m'), 100);
+      res.json({ success: true });
+    });
+  }
+});
+
+app.post('/ptt', (req, res) => {
+  const { ptt } = req.body;
+  console.log(`[API] Setting PTT: ${ptt}`);
+
+  if (CONFIG.radio.type === 'flrig') {
+    FlrigAdapter.setPTT(ptt, (err, val) => {
+      if (err) return res.status(500).json({ error: err.message });
+      state.ptt = !!ptt;
+      res.json({ success: true });
+    });
+  } else {
+    const cmd = ptt ? 'T 1' : 'T 0';
+    RigaAdapter.send(cmd, (err, val) => {
+      if (err) return res.status(500).json({ error: err.message });
+      state.ptt = !!ptt;
+      res.json({ success: true });
+    });
+  }
+});
+
+app.listen(CONFIG.server.port, CONFIG.server.host, () => {
+  console.log(`[HTTP] Rig Daemon listening on port ${CONFIG.server.port}`);
+  console.log(`[HTTP] CORS enabled for all origins`);
+  console.log(`[HTTP] Connects to ${CONFIG.radio.type} at ${CONFIG.radio.host}:${CONFIG.radio.rigPort}`);
+});
+

@@ -19,11 +19,14 @@ import {
   PSKReporterPanel,
   WeatherPanel,
   AmbientPanel,
-  AnalogClockPanel
+  AnalogClockPanel,
+  RigControlPanel,
+  OnAirPanel
 } from './components';
 
 import { loadLayout, saveLayout, DEFAULT_LAYOUT } from './store/layoutStore.js';
 import { DockableLayoutProvider } from './contexts';
+import { useRig } from './contexts/RigContext.jsx';
 import './styles/flexlayout-openhamclock.css';
 
 // Icons
@@ -121,7 +124,7 @@ export const DockableApp = ({
   });
 
   useEffect(() => {
-    try { localStorage.setItem('openhamclock_panelZoom', JSON.stringify(panelZoom)); } catch {}
+    try { localStorage.setItem('openhamclock_panelZoom', JSON.stringify(panelZoom)); } catch { }
   }, [panelZoom]);
 
   const ZOOM_STEPS = [0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 1.75, 2.0];
@@ -183,6 +186,8 @@ export const DockableApp = ({
     'pota': { name: 'POTA', icon: '🏕️' },
     'contests': { name: 'Contests', icon: '🏆' },
     'ambient': { name: 'Ambient Weather', icon: '🌦️' },
+    'rig-control': { name: 'Rig Control', icon: '📻' },
+    'on-air': { name: 'On Air Status', icon: '🎙️' },
   }), []);
 
   // Add panel
@@ -213,7 +218,7 @@ export const DockableApp = ({
       <WeatherPanel
         location={config.location}
         tempUnit={tempUnit}
-        onTempUnitChange={(unit) => { setTempUnit(unit); try { localStorage.setItem('openhamclock_tempUnit', unit); } catch {} }}
+        onTempUnitChange={(unit) => { setTempUnit(unit); try { localStorage.setItem('openhamclock_tempUnit', unit); } catch { } }}
         nodeId={nodeId}
       />
     </div>
@@ -260,7 +265,7 @@ export const DockableApp = ({
         <WeatherPanel
           location={dxLocation}
           tempUnit={tempUnit}
-          onTempUnitChange={(unit) => { setTempUnit(unit); try { localStorage.setItem('openhamclock_tempUnit', unit); } catch {} }}
+          onTempUnitChange={(unit) => { setTempUnit(unit); try { localStorage.setItem('openhamclock_tempUnit', unit); } catch { } }}
           nodeId={nodeId}
         />
       )}
@@ -437,12 +442,21 @@ export const DockableApp = ({
             tempUnit={tempUnit}
             onTempUnitChange={(unit) => {
               setTempUnit(unit);
-              try { localStorage.setItem('openhamclock_tempUnit', unit); } catch {}
+              try { localStorage.setItem('openhamclock_tempUnit', unit); } catch { }
             }}
             nodeId={nodeId}
           />
         );
         break;
+
+      case 'rig-control':
+        content = <RigControlPanel />;
+        break;
+
+      case 'on-air':
+        content = <OnAirPanel />;
+        break;
+
       default:
         content = (
           <div style={{ padding: '20px', color: '#ff6b6b', textAlign: 'center' }}>
@@ -542,6 +556,9 @@ export const DockableApp = ({
     return Object.entries(panelDefs).filter(([id]) => !used.has(id)).map(([id, def]) => ({ id, ...def }));
   }, [model, panelDefs]);
 
+  // Rig State
+  const { ptt } = useRig();
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', background: 'var(--bg-primary)' }}>
       {/* Header */}
@@ -562,6 +579,7 @@ export const DockableApp = ({
           onUpdateClick={handleUpdateClick}
           updateInProgress={updateInProgress}
           showUpdateButton={isLocalInstall}
+          pttActive={ptt}
         />
       </div>
 

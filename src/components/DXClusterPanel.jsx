@@ -5,11 +5,13 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { getBandColor } from '../utils/callsign.js';
+import { detectMode } from '../utils';
+import { useRig } from '../contexts/RigContext.jsx';
 import { IconSearch, IconMap, IconGlobe } from './Icons.jsx';
 
-export const DXClusterPanel = ({ 
-  data, 
-  loading, 
+export const DXClusterPanel = ({
+  data,
+  loading,
   totalSpots,
   filters,
   onFilterChange,
@@ -41,24 +43,25 @@ export const DXClusterPanel = ({
 
   const filterCount = getActiveFilterCount();
   const spots = data || [];
+  const { tuneTo } = useRig();
 
   return (
-    <div className="panel" style={{ 
-      padding: '10px', 
-      display: 'flex', 
+    <div className="panel" style={{
+      padding: '10px',
+      display: 'flex',
       flexDirection: 'column',
       height: '100%',
       overflow: 'hidden'
     }}>
       {/* Header */}
-      <div style={{ 
-        fontSize: '12px', 
-        color: 'var(--accent-green)', 
-        fontWeight: '700', 
-        marginBottom: '6px', 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center' 
+      <div style={{
+        fontSize: '12px',
+        color: 'var(--accent-green)',
+        fontWeight: '700',
+        marginBottom: '6px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
       }}>
         <span><IconGlobe size={12} style={{ verticalAlign: 'middle', marginRight: '4px' }} />{t('dxClusterPanel.title')} <span style={{ color: 'var(--accent-green)', fontSize: '10px' }}>● {t('dxClusterPanel.live')}</span></span>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -97,7 +100,7 @@ export const DXClusterPanel = ({
           </button>
         </div>
       </div>
-      
+
       {/* Quick search */}
       <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
         <input
@@ -124,17 +127,17 @@ export const DXClusterPanel = ({
           <div className="loading-spinner" />
         </div>
       ) : spots.length === 0 ? (
-        <div style={{ 
-          textAlign: 'center', 
-          padding: '20px', 
+        <div style={{
+          textAlign: 'center',
+          padding: '20px',
           color: 'var(--text-muted)',
           fontSize: '12px'
         }}>
           {filterCount > 0 ? t('dxClusterPanel.noSpotsFiltered') : t('dxClusterPanel.noSpots')}
         </div>
       ) : (
-        <div style={{ 
-          flex: 1, 
+        <div style={{
+          flex: 1,
           overflow: 'auto',
           fontSize: '12px',
           fontFamily: 'JetBrains Mono, monospace'
@@ -143,7 +146,7 @@ export const DXClusterPanel = ({
             // Frequency can be in MHz (string like "14.070") or kHz (number like 14070)
             let freqDisplay = '?';
             let freqMHz = 0;
-            
+
             if (spot.freq) {
               const freqVal = parseFloat(spot.freq);
               if (freqVal > 1000) {
@@ -156,16 +159,29 @@ export const DXClusterPanel = ({
                 freqDisplay = freqVal.toFixed(3);
               }
             }
-            
+
             const color = getBandColor(freqMHz);
             const isHovered = hoveredSpot?.call === spot.call;
-            
+
             return (
               <div
                 key={`${spot.call}-${spot.freq}-${i}`}
                 onMouseEnter={() => onHoverSpot?.(spot)}
                 onMouseLeave={() => onHoverSpot?.(null)}
-                onClick={() => onSpotClick?.(spot)}
+                onClick={() => {
+                  onSpotClick?.(spot);
+                  if (spot.freq) {
+                    const freqVal = parseFloat(spot.freq);
+                    let freqHz = freqVal;
+                    if (freqVal < 1000) freqHz = freqVal * 1000000;
+                    else if (freqVal < 100000) freqHz = freqVal * 1000;
+
+                    // detectMode expects a string comment. spot.mode is likely already the mode string or null.
+                    // If spot.mode is present, use it. If not, try detectMode on comment if available.
+                    const mode = spot.mode || detectMode(spot.comment || spot.spotter || '');
+                    tuneTo(freqHz, mode);
+                  }
+                }}
                 style={{
                   display: 'grid',
                   gridTemplateColumns: '55px 1fr 1fr auto',
@@ -182,8 +198,8 @@ export const DXClusterPanel = ({
                 <div style={{ color, fontWeight: '600' }}>
                   {freqDisplay}
                 </div>
-                <div style={{ 
-                  color: 'var(--text-primary)', 
+                <div style={{
+                  color: 'var(--text-primary)',
                   fontWeight: '700',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -191,8 +207,8 @@ export const DXClusterPanel = ({
                 }}>
                   {spot.call}
                 </div>
-                <div style={{ 
-                  color: 'var(--text-muted)', 
+                <div style={{
+                  color: 'var(--text-muted)',
                   fontSize: '10px',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',

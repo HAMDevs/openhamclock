@@ -38,4 +38,9 @@ export {
   PREFIX_MAP,
   getCallsignInfo
 } from './callsign.js';
-export {filterDXPaths} from "./dxClusterFilters";
+export { filterDXPaths } from "./dxClusterFilters";
+
+// Band Plan
+export {
+  getModeFromFreq
+} from './bandPlan.js';

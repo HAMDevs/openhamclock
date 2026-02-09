@@ -12,6 +12,7 @@ import ClassicLayout from './layouts/ClassicLayout.jsx';
 import ModernLayout from './layouts/ModernLayout.jsx';
 
 import { resetLayout } from './store/layoutStore.js';
+import { RigProvider } from './contexts/RigContext.jsx';
 
 import {
   useSpaceWeather,
@@ -289,18 +290,20 @@ const App = () => {
       alignItems: 'center',
       overflow: 'hidden'
     }}>
-      {config.layout === 'dockable' ? (
-        <DockableLayout
-          key={layoutResetKey}
-          {...layoutProps}
-        />
-      ) : (config.layout === 'classic' || config.layout === 'tablet' || config.layout === 'compact') ? (
-        <ClassicLayout {...layoutProps} />
-      ) : (
-        <ModernLayout
-          {...layoutProps}
-        />
-      )}
+      <RigProvider>
+        {config.layout === 'dockable' ? (
+          <DockableLayout
+            key={layoutResetKey}
+            {...layoutProps}
+          />
+        ) : (config.layout === 'classic' || config.layout === 'tablet' || config.layout === 'compact') ? (
+          <ClassicLayout {...layoutProps} />
+        ) : (
+          <ModernLayout
+            {...layoutProps}
+          />
+        )}
+      </RigProvider>
 
       {/* Modals */}
       <SettingsPanel

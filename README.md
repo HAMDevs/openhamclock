@@ -69,6 +69,8 @@ npm run dev
   - [DE / DX Location Panels](#de--dx-location-panels)
   - [Header Bar](#header-bar)
   - [Analog Clock](#analog-clock)
+  - [Rig Control](#rig-control)
+  - [On Air Status](#on-air-status)
 - [Themes and Layouts](#themes-and-layouts)
 - [Map Layers and Plugins](#map-layers-and-plugins)
 - [Languages](#languages)
@@ -120,6 +122,7 @@ The central interactive map is the heart of the dashboard. It ties every other m
 - **Toggle overlays:** Use the header bar buttons to turn DX Paths, DX Labels, POTA, Satellites, PSKReporter, and WSJT-X overlays on and off. Each button shows its current state (highlighted = on).
 - **Click any marker** to see detailed information in a popup.
 - **Set a DX target:** Click anywhere on the map to set a DX target location for propagation predictions. The DX panel on the right sidebar updates with the bearing, distance, and grid square of wherever you clicked.
+- **Click-to-Tune:** If Rig Control is enabled, clicking a spot marker (DX, POTA) will automatically tune your radio to that spot's frequency and mode.
 
 **How it works under the hood:** The `WorldMap.jsx` component uses [Leaflet.js](https://leafletjs.com/) for rendering. DX spot coordinates are resolved in order of precision: callsign database lookup → DXCC prefix table → Maidenhead grid square extracted from spot comments. Great-circle paths are calculated using the Haversine formula and rendered as polylines with intermediate waypoints for visual accuracy. The day/night terminator is computed from the current solar declination and hour angle. The map tile style adapts to your selected theme (dark tiles for dark themes, light tiles for light themes).
 
@@ -143,6 +146,7 @@ Live DX spots streamed from the worldwide DX Spider cluster network. This is the
 2. **Hover over a spot** to highlight its signal path on the map.
 3. **Open filters:** Click the funnel icon (⊕ Filter) to open the DX Filter Manager.
 4. **Toggle map display:** Click the "⊞ Map ON/OFF" button in the panel header to show or hide DX spots on the map.
+5. **Click-to-Tune:** Click any spot in the list to tune your radio to that frequency.
 
 **Filtering (DX Filter Manager):**
 
@@ -514,6 +518,41 @@ A classic analog clock display showing local time with additional station inform
 **How to use it:** The clock automatically sizes to fit whatever panel size you give it. In the dockable layout, you can add it via the "+" button and resize the panel as desired. A larger panel gives you a bigger, more readable clock face.
 
 **Availability:** Always available in the dockable layout via the "Add Panel" menu. In the classic layout, enable it by setting `CLASSIC_ANALOG_CLOCK=true` in your `.env` file (disabled by default to keep the classic layout compact).
+
+---
+
+---
+
+### Rig Control
+
+Directly control your physical radio from the OpenHamClock dashboard.
+
+**What it shows:**
+
+- **Frequency & Mode** — Large, high-visibility readout of your radio's current VFO A frequency and mode.
+- **PTT Control** — A large Push-to-Talk button to key your transmitter.
+- **Status LED** — Indicates connection status to the rig daemon.
+
+**features:**
+
+- **Click-to-Tune** — Click any spot on the **Map**, **DX Cluster**, or **POTA** panel to instantly tune your radio to that frequency and mode.
+- **Automatic Polling** — Bi-directional synchronization; spinning the VFO knob on your radio updates the dashboard instantly.
+
+**Setup:** Requires the standalone `rig-control` daemon running on a machine connected to your radio (via USB/CAT). See the `rig-control/README.md` for setup instructions.
+
+---
+
+### On Air Status
+
+A dedicated, high-visibility panel for broadcasters and net control operators.
+
+**What it shows:**
+
+- **ON AIR** — A massive, pulsing red indicator when your radio is transmitting (PTT active).
+- **RX / STANDBY** — A dimmed "STANDBY" message when receiving.
+- **Responsive Text** — Scales to fill whatever panel size you assign it.
+
+**Usage:** Great for "On Air" studio lights or simply avoiding hot-mic accidents.
 
 ---
 
