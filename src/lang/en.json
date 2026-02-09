@@ -272,5 +272,16 @@
   "station.settings.satellites.showAll": "Showing all satellites (no filter)",
   "station.settings.satellites.selectedCount": "{{count}} satellite(s) selected",
   "station.settings.satellites.visible": "✓ Visible",
-  "station.settings.satellites.belowHorizon": "✗ Below horizon"
+  "station.settings.satellites.belowHorizon": "✗ Below horizon",
+  "app.rigControl.title": "Rig Control",
+  "app.rigControl.connected": "Connected",
+  "app.rigControl.disconnected": "Disconnected",
+  "app.rigControl.error.daemon": "Daemon Disconnected",
+  "app.rigControl.setFreqPlaceholder": "Set Freq (MHz)",
+  "app.rigControl.set": "SET",
+  "app.rigControl.ptt": "PTT",
+  "app.onAir.title": "On Air Status",
+  "app.onAir.transmitting": "ON AIR",
+  "app.onAir.receiving": "RX",
+  "app.onAir.standby": "STANDBY"
 }

@@ -3,6 +3,7 @@
  * Provides resizable, draggable panels while maintaining the original styling
  */
 import React, { useRef, useCallback, useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Layout, Model, Actions, DockLocation } from 'flexlayout-react';
 
 // Components
@@ -109,6 +110,7 @@ export const DockableApp = ({
   updateInProgress,
   isLocalInstall,
 }) => {
+  const { t } = useTranslation();
   const layoutRef = useRef(null);
   const [model, setModel] = useState(() => Model.fromJson(loadLayout()));
   const [showPanelPicker, setShowPanelPicker] = useState(false);
@@ -186,9 +188,9 @@ export const DockableApp = ({
     'pota': { name: 'POTA', icon: '🏕️' },
     'contests': { name: 'Contests', icon: '🏆' },
     'ambient': { name: 'Ambient Weather', icon: '🌦️' },
-    'rig-control': { name: 'Rig Control', icon: '📻' },
-    'on-air': { name: 'On Air Status', icon: '🎙️' },
-  }), []);
+    'rig-control': { name: t('app.rigControl.title'), icon: '📻' },
+    'on-air': { name: t('app.onAir.title'), icon: '🎙️' },
+  }), [t]);
 
   // Add panel
   const handleAddPanel = useCallback((panelId) => {

@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useRig } from '../contexts/RigContext';
 
 
 const RigControlPanel = () => {
+    const { t } = useTranslation();
     const { connected, freq, mode, ptt, setFreq, setMode, setPTT, error } = useRig();
     const [inputFreq, setInputFreq] = useState('');
 
@@ -26,19 +28,19 @@ const RigControlPanel = () => {
         <div className="panel rig-control-panel">
             <div className="panel-header">
                 <h3>
-                    <span className="icon">📻</span> Rig Control
+                    <span className="icon">📻</span> {t('app.rigControl.title')}
                 </h3>
                 <div className="panel-controls">
-                    <span className={`status-led ${connected ? 'green' : 'red'}`} title={connected ? 'Connected' : 'Disconnected'} />
+                    <span className={`status-led ${connected ? 'green' : 'red'}`} title={connected ? t('app.rigControl.connected') : t('app.rigControl.disconnected')} />
                 </div>
             </div>
 
             <div className="panel-content">
-                {error && <div className="error-banner">Daemon Disconnected</div>}
+                {error && <div className="error-banner">{t('app.rigControl.error.daemon')}</div>}
 
                 <div className="rig-display">
                     <div className={`frequency-readout ${ptt ? 'transmitting' : ''}`}>
-                        {formatFreq(freq)} <span className="unit">MHz</span>
+                        {formatFreq(freq)} <span className="unit">{t('app.units.mhz')}</span>
                     </div>
                     <div className="mode-badge">{mode || '---'}</div>
                 </div>
@@ -48,11 +50,11 @@ const RigControlPanel = () => {
                         <input
                             type="number"
                             step="0.0001"
-                            placeholder="Set Freq (MHz)"
+                            placeholder={t('app.rigControl.setFreqPlaceholder')}
                             value={inputFreq}
                             onChange={e => setInputFreq(e.target.value)}
                         />
-                        <button type="submit">SET</button>
+                        <button type="submit">{t('app.rigControl.set')}</button>
                     </form>
 
                     <div className="ptt-control">
@@ -63,7 +65,7 @@ const RigControlPanel = () => {
                             onTouchStart={() => setPTT(true)}
                             onTouchEnd={() => setPTT(false)}
                         >
-                            PTT
+                            {t('app.rigControl.ptt')}
                         </button>
                     </div>
                 </div>

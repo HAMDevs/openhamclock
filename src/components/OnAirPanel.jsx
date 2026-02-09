@@ -1,7 +1,9 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { useRig } from '../contexts/RigContext';
 
 const OnAirPanel = () => {
+    const { t } = useTranslation();
     const { ptt } = useRig();
 
     return (
@@ -25,7 +27,7 @@ const OnAirPanel = () => {
                 textShadow: ptt ? '0 0 20px rgba(0,0,0,0.5)' : 'none',
                 animation: ptt ? 'pulse 1s infinite' : 'none'
             }}>
-                {ptt ? 'ON AIR' : 'RX'}
+                {ptt ? t('app.onAir.transmitting') : t('app.onAir.receiving')}
             </div>
             {!ptt && (
                 <div style={{
@@ -34,7 +36,7 @@ const OnAirPanel = () => {
                     fontFamily: 'JetBrains Mono, monospace',
                     opacity: 0.5
                 }}>
-                    STANDBY
+                    {t('app.onAir.standby')}
                 </div>
             )}
         </div>

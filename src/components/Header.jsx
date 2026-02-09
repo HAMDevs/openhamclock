@@ -3,6 +3,7 @@
  * Top bar with callsign, clocks, weather, and controls
  */
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { IconGear, IconExpand, IconShrink } from './Icons.jsx';
 export const Header = ({
   config,
@@ -24,6 +25,7 @@ export const Header = ({
   showUpdateButton,
   pttActive
 }) => {
+  const { t } = useTranslation();
   return (
     <div style={{
       gridColumn: '1 / -1',
@@ -48,7 +50,7 @@ export const Header = ({
               : "22px", fontWeight: '900', color: 'var(--accent-amber)', cursor: 'pointer', fontFamily: 'Orbitron, monospace', whiteSpace: 'nowrap'
           }}
           onClick={onSettingsClick}
-          title="Click for settings"
+          title={t('app.settings.click')}
         >
           {config.callsign}
         </span>
@@ -63,7 +65,7 @@ export const Header = ({
             fontSize: '12px',
             animation: 'pulse 1s infinite'
           }}>
-            ON AIR
+            {t('app.onAir.transmitting')}
           </div>
         )}
       </div>
@@ -253,7 +255,7 @@ export const Header = ({
             whiteSpace: 'nowrap'
           }}
         >
-          <IconGear size={12} style={{ verticalAlign: 'middle', marginRight: '4px' }} />Settings
+          <IconGear size={12} style={{ verticalAlign: 'middle', marginRight: '4px' }} />{t('app.settings.title')}
         </button>
         <button
           onClick={onFullscreenToggle}
