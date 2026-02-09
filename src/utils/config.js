@@ -30,7 +30,8 @@ export const DEFAULT_CONFIG = {
   rigControl: {
     enabled: false,
     host: 'http://localhost',
-    port: 5555
+    port: 5555,
+    tuneEnabled: false
   },
   theme: 'dark', // 'dark', 'light', 'legacy', or 'retro'
   layout: 'modern', // 'modern' or 'classic'

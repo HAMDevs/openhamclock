@@ -284,6 +284,7 @@
   "station.settings.rigControl.enabled": "Enable Rig Control",
   "station.settings.rigControl.host": "Beast Host",
   "station.settings.rigControl.port": "Beast Port",
+  "station.settings.rigControl.tune": "Send Tune Command (Default: Off)",
   "station.settings.rigControl.daemon": "Rig Daemon",
   "station.settings.rigControl.describe": "Connects to local OpenHamClock Rig Daemon",
   "app.rigControl.set": "SET",

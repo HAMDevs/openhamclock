@@ -537,8 +537,17 @@ Directly control your physical radio from the OpenHamClock dashboard.
 
 - **Click-to-Tune** — Click any spot on the **Map**, **DX Cluster**, or **POTA** panel to instantly tune your radio to that frequency and mode.
 - **Automatic Polling** — Bi-directional synchronization; spinning the VFO knob on your radio updates the dashboard instantly.
+- **Antenna Tuner** — (Optional) Automatically triggers a tune cycle 3 seconds after changing frequency.
 
-**Setup:** Requires the standalone `rig-control` daemon running on a machine connected to your radio (via USB/CAT). See the `rig-control/README.md` for setup instructions.
+**Configuration:**
+
+1.  **Rig Daemon**: Run the standalone `rig-control` daemon on a machine connected to your radio.
+2.  **UI Setup**: Go to **Settings → Station → Rig Control (Beta)**.
+    -   **Enable Rig Control**: Toggle on to connect.
+    -   **Host/Port**: Enter the IP address of the machine running the daemon (default `http://localhost:5555`).
+    -   **Send Tune Command**: Enable to trigger the auto-tuner on frequency changes.
+
+**Setup:** See the `rig-control/README.md` for detailed daemon installation and setup instructions.
 
 ---
 

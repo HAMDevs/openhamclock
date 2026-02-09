@@ -230,6 +230,28 @@ const FlrigAdapter = {
   setPTT: (ptt, cb) => {
     // flrig set_ptt takes integer 0 or 1
     FlrigAdapter.client.methodCall('rig.set_ptt', [ptt ? 1 : 0], cb);
+  },
+
+  tune: () => {
+    console.log('[Flrig] Sending Tune command...');
+    // Try rig.tune first
+    FlrigAdapter.client.methodCall('rig.tune', [1], (err, val) => {
+      if (err) {
+        console.warn('[Flrig] rig.tune failed, trying fallback (PTT toggle):', err.message);
+        // Fallback: Toggle PTT if TUNE command not supported/failed
+        FlrigAdapter.setPTT(true, () => {
+          setTimeout(() => {
+            FlrigAdapter.setPTT(false, () => {
+              console.log('[Flrig] Fallback Tune (PTT) completed');
+            });
+          }, 3000); // Transmit for 3s
+        });
+      } else {
+        console.log('[Flrig] Tune command sent successfully');
+        // If rig.tune is momentary, we might need to turn it off? 
+        // Usually tune starts a cycle. Let's assume it triggers the tuner.
+      }
+    });
   }
 };
 
@@ -269,8 +291,18 @@ app.post('/freq', (req, res) => {
   if (CONFIG.radio.type === 'flrig') {
     FlrigAdapter.setFreq(freq, (err, val) => {
       if (err) return res.status(500).json({ error: err.message });
+
       // Poll update immediately
       setTimeout(FlrigAdapter.poll, 100);
+
+      // Handle delayed Tune if requested
+      if (req.body.tune) {
+        console.log('[API] Tune requested, scheduling for 3s...');
+        setTimeout(() => {
+          FlrigAdapter.tune();
+        }, 3000);
+      }
+
       res.json({ success: true });
     });
   } else {

@@ -7,6 +7,7 @@ This standalone Node.js service acts as a bridge between the OpenHamClock web ap
 - **Lightweight**: Minimal dependencies, runs anywhere Node.js runs.
 - **PTT Support**: Can trigger PTT transmission.
 - **Polling**: Automatically polls the radio for Frequency, Mode, and PTT status updates.
+- **Auto-Tune**: Supports delayed antenna tuning commands (flrig only).
 
 ## Supported Backends
 1.  **rigctld** (HAMlib): Uses the TCP text protocol (Default port 4532).
@@ -47,6 +48,11 @@ Configuration is loaded from `rig-config.json`. A default file is provided:
 - **radio.port**: Port of the rig control software
 - **radio.pttEnabled**: Set to `true` to allow PTT commands. Defaults to `false` for safety.
 
+### Remote Access
+By default, the daemon binds to `0.0.0.0`, meaning it is accessible from other machines on your network.
+- **Firewall**: Ensure port `5555` is open.
+- **Connect**: In OpenHamClock Settings, use the daemon's IP (e.g., `http://192.168.1.50:5555`).
+
 ## Usage
 
 ### Start with Config File (Recommended)
@@ -74,7 +80,7 @@ The daemon listens on port `5555` (configurable) and provides the following endp
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/status` | Returns JSON object with `freq`, `mode`, `ptt`, `connected` status. |
-| `POST` | `/freq` | Sets frequency. Body: `{ "freq": 14074000 }` (Hz) |
+| `POST` | `/freq` | Sets frequency. Body: `{ "freq": 14074000, "tune": true }` (Hz) |
 | `POST` | `/mode` | Sets mode. Body: `{ "mode": "USB" }` |
 | `POST` | `/ptt` | Sets PTT. Body: `{ "ptt": true }` |
 

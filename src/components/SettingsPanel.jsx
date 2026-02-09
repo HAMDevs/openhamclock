@@ -36,6 +36,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
   const [rigEnabled, setRigEnabled] = useState(config?.rigControl?.enabled || false);
   const [rigHost, setRigHost] = useState(config?.rigControl?.host || 'http://localhost');
   const [rigPort, setRigPort] = useState(config?.rigControl?.port || 5555);
+  const [tuneEnabled, setTuneEnabled] = useState(config?.rigControl?.tuneEnabled || false);
   const [satelliteSearch, setSatelliteSearch] = useState('');
   const { t, i18n } = useTranslation();
 
@@ -75,6 +76,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
       setRigEnabled(config.rigControl?.enabled || false);
       setRigHost(config.rigControl?.host || 'http://localhost');
       setRigPort(config.rigControl?.port || 5555);
+      setTuneEnabled(config.rigControl?.tuneEnabled || false);
       if (config.location?.lat && config.location?.lon) {
         setGridSquare(calculateGridSquare(config.location.lat, config.location.lon));
       }
@@ -204,7 +206,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
       lowMemoryMode,
       units,
       propagation: { mode: propMode, power: parseFloat(propPower) || 100 },
-      rigControl: { enabled: rigEnabled, host: rigHost, port: parseInt(rigPort) || 5555 }
+      rigControl: { enabled: rigEnabled, host: rigHost, port: parseInt(rigPort) || 5555, tuneEnabled }
     });
     onClose();
   };
@@ -825,6 +827,18 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                     </div>
                     <div style={{ gridColumn: 'span 2', fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
                       {t('station.settings.rigControl.describe')}
+                    </div>
+
+                    <div style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', marginTop: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '8px' }}>
+                      <input
+                        type="checkbox"
+                        checked={tuneEnabled}
+                        onChange={(e) => setTuneEnabled(e.target.checked)}
+                        style={{ marginRight: '8px' }}
+                      />
+                      <span style={{ color: 'var(--text-primary)', fontSize: '13px' }}>
+                        {t('station.settings.rigControl.tune')}
+                      </span>
                     </div>
                   </div>
                 )}

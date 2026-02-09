@@ -76,7 +76,7 @@ export const RigProvider = ({ children, rigConfig }) => {
             await fetch(`${rigUrl}/freq`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ freq })
+                body: JSON.stringify({ freq, tune: rigConfig.tuneEnabled })
             });
             // Poll immediately to update UI
             pollRig();
