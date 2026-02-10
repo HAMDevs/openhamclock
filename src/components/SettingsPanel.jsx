@@ -842,7 +842,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                         {t('station.settings.rigControl.tuneEnabled')}
                       </span>
                       <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                        Allow clicking spots to retune rig
+                        {t('station.settings.rigControl.tuneEnabled.hint')}
                       </div>
                     </div>
                   </div>
@@ -959,11 +959,11 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                   const pwrDb = 10 * Math.log10((propPower || 100) / 100);
                   const margin = adv + pwrDb;
                   return `Signal margin: ${margin >= 0 ? '+' : ''}${margin.toFixed(1)} dB vs SSB@100W — ${margin >= 30 ? 'extreme weak-signal advantage' :
-                      margin >= 15 ? 'strong advantage — marginal bands may open' :
-                        margin >= 5 ? 'moderate advantage' :
-                          margin >= -5 ? 'baseline conditions' :
-                            margin >= -15 ? 'reduced margin — some bands may close' :
-                              'significant disadvantage — only strong openings'
+                    margin >= 15 ? 'strong advantage — marginal bands may open' :
+                      margin >= 5 ? 'moderate advantage' :
+                        margin >= -5 ? 'baseline conditions' :
+                          margin >= -15 ? 'reduced margin — some bands may close' :
+                            'significant disadvantage — only strong openings'
                     }`;
                 })()}
               </div>

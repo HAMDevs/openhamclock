@@ -278,6 +278,7 @@
   "station.settings.rigControl.host": "Rig Daemon Host",
   "station.settings.rigControl.port": "Rig Daemon Port",
   "station.settings.rigControl.tuneEnabled": "Click-to-tune",
+  "station.settings.rigControl.tuneEnabled.hint": "Allow clicking spots to retune rig",
   "app.rigControl.disconnected": "Rig Disconnected",
   "app.rigControl.disabled": "Rig Control Disabled",
   "app.rigControl.connected": "Rig Connected",
