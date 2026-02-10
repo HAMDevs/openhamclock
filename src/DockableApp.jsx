@@ -467,7 +467,7 @@ export const DockableApp = ({
   }, [
     config, deGrid, dxGrid, dxLocation, deSunTimes, dxSunTimes, showDxWeather, tempUnit, localWeather, dxWeather, solarIndices,
     propagation, bandConditions, dxClusterData, dxFilters, hoveredSpot, mapLayers, potaSpots,
-    mySpots, satellites, filteredPskSpots, wsjtxMapSpots, dxpeditions, contests,
+    mySpots, satellites, filteredSatellites, filteredPskSpots, wsjtxMapSpots, dxpeditions, contests,
     pskFilters, wsjtx, handleDXChange, setDxFilters, setShowDXFilters, setShowPSKFilters,
     setHoveredSpot, toggleDXPaths, toggleDXLabels, togglePOTA, toggleSatellites, togglePSKReporter, toggleWSJTX,
     dxLocked, handleToggleDxLock, panelZoom

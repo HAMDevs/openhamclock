@@ -449,8 +449,7 @@ Current weather conditions at your station location, displayed in the header bar
 
 **Data sources:**
 
-- **NWS api.weather.gov** (US locations) — Free government API, no key required, unlimited requests. Used automatically for US coordinates.
-- **Open-Meteo** (international) — Free weather API, no API key required. Used for all non-US coordinates.
+- **Open-Meteo** — Free weather API, no API key required. Fetched directly by each user's browser (rate limits are per-user, not per-server). Optional API key support in Settings for higher rate limits.
 
 No configuration needed — weather works automatically based on your station coordinates.
 
@@ -686,7 +685,7 @@ All configuration is done through the `.env` file. On first run, this file is au
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OPENWEATHER_API_KEY` | *(none)* | OpenWeatherMap API key. Only needed for the **Cloud Layer** map overlay — weather data uses NWS (US) and Open-Meteo (international) automatically with no key. Get a free key at [openweathermap.org/api](https://openweathermap.org/api). Also set `VITE_OPENWEATHER_API_KEY` to the same value. |
+| `OPENWEATHER_API_KEY` | *(none)* | OpenWeatherMap API key. Only needed for the **Cloud Layer** map overlay — weather data uses Open-Meteo directly from each user's browser with no key. Get a free key at [openweathermap.org/api](https://openweathermap.org/api). Also set `VITE_OPENWEATHER_API_KEY` to the same value. |
 | `ITURHFPROP_URL` | Public service | URL for ITU-R P.533 propagation predictions. Defaults to the public OpenHamClock service. Override only if self-hosting the `iturhfprop-service/`. |
 | `DXSPIDER_PROXY_URL` | *(none)* | URL of your DX Spider proxy. A default proxy is provided, so you only need this if you're running your own. |
 
@@ -1051,7 +1050,7 @@ The backend exposes these REST endpoints. All data endpoints return JSON. Cache 
 | `GET /api/version` | Lightweight version check (for auto-refresh polling) | no-cache |
 | `GET /api/health` | Health dashboard with uptime, visitors, concurrent users, session analytics, API traffic | — |
 | `GET /api/n0nbh` | N0NBH band conditions (SFI, K, bands, VHF, geomag, signal noise, MUF) | 1 hr |
-| `GET /api/weather?lat=&lon=` | Weather proxy (Open-Meteo). Coordinates rounded to ~11km grid for cache sharing | 15 min |
+| *(weather)* | Weather is fetched directly from Open-Meteo by each user's browser — no server endpoint needed | — |
 | `GET /api/dxcluster/spots` | Current DX cluster spots (array of spot objects) | 5 sec |
 | `GET /api/dxcluster/paths` | DX spots with resolved coordinates for map display | 5 sec |
 | `GET /api/dxcluster/sources` | Available DX cluster source backends | — |

@@ -40,6 +40,7 @@ export default function ClassicLayout(props) {
     potaSpots,
     mySpots,
     satellites,
+    filteredSatellites,
     mapLayers,
     dxFilters,
     filteredPskSpots,

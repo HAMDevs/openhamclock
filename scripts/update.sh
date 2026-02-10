@@ -129,6 +129,9 @@ npm install --include=dev
 
 echo ""
 echo "🔨 Building frontend..."
+# Remove old dist/ to prevent stale hashed JS chunks from being served
+# (browsers may cache old chunks, causing blank screens after update)
+rm -rf dist/
 npm run build
 
 echo ""
