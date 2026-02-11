@@ -438,11 +438,7 @@ export const DockableApp = ({
             onToggleMap={togglePSKReporter}
             filters={pskFilters}
             onOpenFilters={() => setShowPSKFilters(true)}
-            onShowOnMap={(report) => {
-              if (report.lat && report.lon) {
-                handleDXChange({ lat: report.lat, lon: report.lon });
-              }
-            }}
+            onSpotClick={handleSpotClick}
             wsjtxDecodes={wsjtx.decodes}
             wsjtxClients={wsjtx.clients}
             wsjtxQsos={wsjtx.qsos}
@@ -468,7 +464,7 @@ export const DockableApp = ({
         break;
 
       case 'sota':
-        content = <SOTAPanel data={sotaSpots.data} loading={sotaSpots.loading} showOnMap={mapLayers.showSOTA} onToggleMap={toggleSOTA} />;
+        content = <SOTAPanel data={sotaSpots.data} loading={sotaSpots.loading} showOnMap={mapLayers.showSOTA} onToggleMap={toggleSOTA} onSpotClick={handleSpotClick} />;
         break;
 
       case 'contests':

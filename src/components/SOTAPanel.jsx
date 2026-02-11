@@ -4,13 +4,13 @@
  */
 import React from 'react';
 
-export const SOTAPanel = ({ data, loading, showOnMap, onToggleMap }) => {
+export const SOTAPanel = ({ data, loading, showOnMap, onToggleMap, onSpotClick }) => {
   return (
     <div className="panel" style={{ padding: '8px', height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div className="panel-header" style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
+      <div className="panel-header" style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         marginBottom: '6px',
         fontSize: '11px'
       }}>
@@ -32,7 +32,7 @@ export const SOTAPanel = ({ data, loading, showOnMap, onToggleMap }) => {
           ⊞ Map {showOnMap ? 'ON' : 'OFF'}
         </button>
       </div>
-      
+
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '10px' }}>
@@ -41,15 +41,19 @@ export const SOTAPanel = ({ data, loading, showOnMap, onToggleMap }) => {
         ) : data && data.length > 0 ? (
           <div style={{ fontSize: '10px', fontFamily: 'JetBrains Mono, monospace' }}>
             {data.map((spot, i) => (
-              <div 
+              <div
                 key={`${spot.call}-${spot.ref}-${i}`}
-                style={{ 
+                onClick={() => onSpotClick?.(spot)}
+                style={{
                   display: 'grid',
                   gridTemplateColumns: '62px 50px 58px 1fr',
                   gap: '4px',
                   padding: '3px 0',
-                  borderBottom: i < data.length - 1 ? '1px solid var(--border-color)' : 'none'
+                  borderBottom: i < data.length - 1 ? '1px solid var(--border-color)' : 'none',
+                  cursor: 'pointer'
                 }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
                 <span style={{ color: '#ff9632', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {spot.call}
