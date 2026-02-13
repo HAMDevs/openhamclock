@@ -70,8 +70,20 @@ const SatellitePanel = ({ config }) => {
     const rangeRate = calculateRangeRate(positionAndVelocity, observerGd, now);
 
     // Frequencies
-    const downlinkHz = parseFrequency(selectedSat.downlink);
-    const uplinkHz = parseFrequency(selectedSat.uplink); // Uplink usually 70cm, Downlink 2m or vice versa
+    // Try to find downlink/uplink from new 'frequencies' array or fall back to old properties
+    let downlinkHz = parseFrequency(selectedSat.downlink);
+    let uplinkHz = parseFrequency(selectedSat.uplink);
+
+    if (selectedSat.frequencies && Array.isArray(selectedSat.frequencies)) {
+      if (!downlinkHz) {
+        const dl = selectedSat.frequencies.find(f => f && (f.description?.toLowerCase().includes('downlink') || f.desc?.toLowerCase().includes('downlink')));
+        if (dl) downlinkHz = parseFrequency(dl.frequency || dl.freq);
+      }
+      if (!uplinkHz) {
+        const ul = selectedSat.frequencies.find(f => f && (f.description?.toLowerCase().includes('uplink') || f.desc?.toLowerCase().includes('uplink')));
+        if (ul) uplinkHz = parseFrequency(ul.frequency || ul.freq);
+      }
+    }
 
     const dlShift = downlinkHz
       ? calculateDopplerShift(downlinkHz, rangeRate)
@@ -270,13 +282,17 @@ const SatellitePanel = ({ config }) => {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '5px', alignItems: 'center', fontSize: '0.85rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>{t('satellite.panel.downlink', { defaultValue: 'Downlink:' })}</span>
-                <span style={{ fontFamily: 'monospace' }}>{selectedSat.downlink || '---'}</span>
+                <span style={{ fontFamily: 'monospace' }}>
+                  {calculations && calculations.downlink ? (calculations.downlink / 1000000).toFixed(3) + ' MHz' : (selectedSat.downlink || '---')}
+                </span>
                 <span style={{ color: dopplerEnabled ? 'var(--accent-cyan)' : 'var(--text-muted)', fontFamily: 'monospace' }}>
                   {calculations && calculations.dlCorrected ? formatDopplerFreq(calculations.dlCorrected) : ''}
                 </span>
 
                 <span style={{ color: 'var(--text-secondary)' }}>{t('satellite.panel.uplink', { defaultValue: 'Uplink:' })}</span>
-                <span style={{ fontFamily: 'monospace' }}>{selectedSat.uplink || '---'}</span>
+                <span style={{ fontFamily: 'monospace' }}>
+                  {calculations && calculations.uplink ? (calculations.uplink / 1000000).toFixed(3) + ' MHz' : (selectedSat.uplink || '---')}
+                </span>
                 <span style={{ color: dopplerEnabled ? 'var(--accent-cyan)' : 'var(--text-muted)', fontFamily: 'monospace' }}>
                   {calculations && calculations.ulCorrected ? formatDopplerFreq(calculations.ulCorrected) : ''}
                 </span>
