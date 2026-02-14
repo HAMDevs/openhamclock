@@ -56,7 +56,7 @@ npm run dev
   - [DX Cluster](#dx-cluster)
   - [PSKReporter](#pskreporter)
   - [POTA — Parks on the Air](#pota--parks-on-the-air)
-  - [WWFF - World Wide Flora and Fauna](#wwff---world-wide-flora-and-fauna)
+  - [WWFF — World Wide Flora and Fauna](#wwff---world-wide-flora-and-fauna)
   - [Space Weather](#space-weather)
   - [Solar Panel](#solar-panel)
   - [Band Conditions](#band-conditions)
@@ -110,7 +110,7 @@ The central interactive map is the heart of the dashboard. It ties every other m
 - **DX cluster spots** — Colored circle markers for each DX spot, color-coded by band (160m = dark red, 80m = orange, 40m = yellow, 20m = green, 15m = cyan, 10m = magenta, etc.). Click any marker to see the full callsign, frequency, mode, spotter, and DXCC entity.
 - **Great-circle signal paths** — Lines drawn from your station to each DX spot showing the shortest path on the globe. These are true great-circle paths, not straight lines.
 - **POTA activators** — Green triangle markers for Parks on the Air activators. Click for park name, reference number, frequency, mode, and spot time.
-- **WWFF activators** - Light Green inverted triangle markers for Parks on the Air activators. Click for park name, reference number, frequency, mode, and spot time.
+- **WWFF activators** - Light Green inverted triangle markers for World Wide Flora and Fauna activators. Click for park name, reference number, frequency, mode, and spot time.
 - **Satellite positions** — Colored markers for amateur radio satellites with orbital track lines showing their predicted path.
 - **PSKReporter paths** — Signal paths from the PSKReporter network showing who is hearing whom on digital modes.
 - **Day/night terminator** — A shaded overlay showing which parts of the Earth are in darkness, updated in real time.
