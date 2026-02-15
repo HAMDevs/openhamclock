@@ -2805,7 +2805,310 @@ app.get('/api/dxcluster/paths', async (req, res) => {
 const callsignLookupCache = new Map(); // key = callsign, value = { data, timestamp }
 const CALLSIGN_CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
-// Simple callsign to grid/location lookup using HamQTH
+// ── QRZ XML API Session Manager ──
+// QRZ provides the most accurate lat/lon (user-supplied, geocoded, or grid-derived).
+// Requires a QRZ Logbook Data subscription for full data access.
+// Session keys are cached and reused per the QRZ spec; re-login only on expiry.
+const qrzSession = {
+  key: null,
+  expiry: 0,        // Timestamp when session was last validated
+  maxAge: 3600000,  // Re-validate session every hour
+  username: CONFIG._qrzUsername || '',
+  password: CONFIG._qrzPassword || '',
+  loginInFlight: null,  // Dedup concurrent login attempts
+  lookupCount: 0,
+  lastError: null
+};
+
+// Persist QRZ credentials to a file so they survive restarts (set via Settings UI)
+const QRZ_CREDS_FILE = path.join(__dirname, '.qrz-credentials');
+
+function loadQRZCredentials() {
+  // .env takes priority
+  if (CONFIG._qrzUsername && CONFIG._qrzPassword) {
+    qrzSession.username = CONFIG._qrzUsername;
+    qrzSession.password = CONFIG._qrzPassword;
+    logDebug('[QRZ] Credentials loaded from .env');
+    return;
+  }
+  // Fall back to persisted file from Settings UI
+  try {
+    if (fs.existsSync(QRZ_CREDS_FILE)) {
+      const creds = JSON.parse(fs.readFileSync(QRZ_CREDS_FILE, 'utf8'));
+      if (creds.username && creds.password) {
+        qrzSession.username = creds.username;
+        qrzSession.password = creds.password;
+        logDebug('[QRZ] Credentials loaded from .qrz-credentials');
+      }
+    }
+  } catch (e) {
+    logDebug('[QRZ] Could not load saved credentials');
+  }
+}
+loadQRZCredentials();
+
+function isQRZConfigured() {
+  return !!(qrzSession.username && qrzSession.password);
+}
+
+// Login to QRZ XML API and obtain a session key
+async function qrzLogin() {
+  if (!isQRZConfigured()) return null;
+  
+  // Dedup: if a login is already in-flight, piggyback on it
+  if (qrzSession.loginInFlight) return qrzSession.loginInFlight;
+  
+  qrzSession.loginInFlight = (async () => {
+    try {
+      const url = `https://xmldata.qrz.com/xml/current/?username=${encodeURIComponent(qrzSession.username)};password=${encodeURIComponent(qrzSession.password)};agent=OpenHamClock/${APP_VERSION}`;
+      const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      
+      if (!response.ok) {
+        qrzSession.lastError = `HTTP ${response.status}`;
+        return null;
+      }
+      
+      const xml = await response.text();
+      
+      // Parse session key
+      const keyMatch = xml.match(/<Key>([^<]+)<\/Key>/);
+      const errorMatch = xml.match(/<Error>([^<]+)<\/Error>/);
+      const subExpMatch = xml.match(/<SubExp>([^<]+)<\/SubExp>/);
+      
+      if (errorMatch) {
+        qrzSession.lastError = errorMatch[1];
+        console.error(`[QRZ] Login failed: ${errorMatch[1]}`);
+        return null;
+      }
+      
+      if (keyMatch) {
+        qrzSession.key = keyMatch[1];
+        qrzSession.expiry = Date.now() + qrzSession.maxAge;
+        qrzSession.lastError = null;
+        const subInfo = subExpMatch ? subExpMatch[1] : 'unknown';
+        console.log(`[QRZ] Session established (subscription: ${subInfo})`);
+        return qrzSession.key;
+      }
+      
+      qrzSession.lastError = 'No session key in response';
+      return null;
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        qrzSession.lastError = err.message;
+        logErrorOnce('QRZ', `Login error: ${err.message}`);
+      }
+      return null;
+    } finally {
+      qrzSession.loginInFlight = null;
+    }
+  })();
+  
+  return qrzSession.loginInFlight;
+}
+
+// Get a valid QRZ session key (login if needed)
+async function getQRZSessionKey() {
+  if (!isQRZConfigured()) return null;
+  
+  // Reuse existing key if still fresh
+  if (qrzSession.key && Date.now() < qrzSession.expiry) {
+    return qrzSession.key;
+  }
+  
+  return qrzLogin();
+}
+
+// Look up a callsign via QRZ XML API — returns rich data including geoloc source
+async function qrzLookup(callsign) {
+  const sessionKey = await getQRZSessionKey();
+  if (!sessionKey) return null;
+  
+  try {
+    const url = `https://xmldata.qrz.com/xml/current/?s=${sessionKey};callsign=${encodeURIComponent(callsign)}`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    
+    if (!response.ok) return null;
+    
+    const xml = await response.text();
+    
+    // Check for session expiry — if so, re-login and retry once
+    const errorMatch = xml.match(/<Error>([^<]+)<\/Error>/);
+    if (errorMatch) {
+      const err = errorMatch[1];
+      if (err.includes('Session') || err.includes('Invalid session')) {
+        // Session expired — force re-login and retry
+        qrzSession.key = null;
+        qrzSession.expiry = 0;
+        const newKey = await qrzLogin();
+        if (newKey) {
+          return qrzLookup(callsign); // Retry with new key (recursive, max 1 deep)
+        }
+      }
+      // "Not found" is not an error we need to log
+      if (!err.includes('Not found')) {
+        logDebug(`[QRZ] Lookup error for ${callsign}: ${err}`);
+      }
+      return null;
+    }
+    
+    // Parse callsign data from XML
+    const get = (field) => {
+      const m = xml.match(new RegExp(`<${field}>([^<]*)</${field}>`));
+      return m ? m[1] : null;
+    };
+    
+    const lat = get('lat');
+    const lon = get('lon');
+    
+    if (!lat || !lon) return null;
+    
+    qrzSession.lookupCount++;
+    
+    const result = {
+      callsign: get('call') || callsign,
+      lat: parseFloat(lat),
+      lon: parseFloat(lon),
+      grid: get('grid') || '',
+      country: get('country') || get('land') || 'Unknown',
+      state: get('state') || '',
+      county: get('county') || '',
+      cqZone: get('cqzone') || '',
+      ituZone: get('ituzone') || '',
+      fname: get('fname') || '',
+      name: get('name') || '',
+      geoloc: get('geoloc') || 'unknown', // user|geocode|grid|zip|state|dxcc|none
+      source: 'qrz'
+    };
+    
+    logDebug(`[QRZ] ${callsign}: ${result.lat.toFixed(4)}, ${result.lon.toFixed(4)} (${result.geoloc})`);
+    return result;
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      logErrorOnce('QRZ', `Lookup error: ${err.message}`);
+    }
+    return null;
+  }
+}
+
+// Look up via HamQTH DXCC API (no auth, but only DXCC-level accuracy)
+async function hamqthLookup(callsign) {
+  try {
+    const response = await fetch(`https://www.hamqth.com/dxcc.php?callsign=${encodeURIComponent(callsign)}`, {
+      signal: AbortSignal.timeout(8000)
+    });
+    
+    if (!response.ok) return null;
+    
+    const text = await response.text();
+    const latMatch = text.match(/<lat>([^<]+)<\/lat>/);
+    const lonMatch = text.match(/<lng>([^<]+)<\/lng>/);
+    const countryMatch = text.match(/<n>([^<]+)<\/name>/);
+    const cqMatch = text.match(/<cq>([^<]+)<\/cq>/);
+    const ituMatch = text.match(/<itu>([^<]+)<\/itu>/);
+    
+    if (!latMatch || !lonMatch) return null;
+    
+    return {
+      callsign,
+      lat: parseFloat(latMatch[1]),
+      lon: parseFloat(lonMatch[1]),
+      country: countryMatch ? countryMatch[1] : 'Unknown',
+      cqZone: cqMatch ? cqMatch[1] : '',
+      ituZone: ituMatch ? ituMatch[1] : '',
+      source: 'hamqth'
+    };
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      logErrorOnce('Callsign Lookup', `HamQTH: ${err.message}`);
+    }
+    return null;
+  }
+}
+
+// ── QRZ Configuration Endpoints ──
+
+// GET /api/qrz/status — check if QRZ is configured and working
+app.get('/api/qrz/status', (req, res) => {
+  res.json({
+    configured: isQRZConfigured(),
+    hasSession: !!qrzSession.key,
+    lookupCount: qrzSession.lookupCount,
+    lastError: qrzSession.lastError,
+    source: CONFIG._qrzUsername ? 'env' : (qrzSession.username ? 'settings' : 'none')
+  });
+});
+
+// POST /api/qrz/configure — save QRZ credentials (from Settings UI)
+app.post('/api/qrz/configure', writeLimiter, requireWriteAuth, async (req, res) => {
+  const { username, password } = req.body || {};
+  
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password required' });
+  }
+  
+  // Test credentials by attempting login
+  const oldUsername = qrzSession.username;
+  const oldPassword = qrzSession.password;
+  qrzSession.username = username.trim();
+  qrzSession.password = password.trim();
+  qrzSession.key = null;
+  qrzSession.expiry = 0;
+  
+  const key = await qrzLogin();
+  
+  if (key) {
+    // Credentials work — persist them
+    try {
+      fs.writeFileSync(QRZ_CREDS_FILE, JSON.stringify({ 
+        username: qrzSession.username, 
+        password: qrzSession.password 
+      }), 'utf8');
+      fs.chmodSync(QRZ_CREDS_FILE, 0o600); // Owner-only read/write
+    } catch (e) {
+      console.error('[QRZ] Could not save credentials file:', e.message);
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'QRZ credentials validated and saved',
+      lookupCount: qrzSession.lookupCount
+    });
+  } else {
+    // Restore old credentials
+    qrzSession.username = oldUsername;
+    qrzSession.password = oldPassword;
+    res.status(401).json({ 
+      success: false, 
+      error: qrzSession.lastError || 'Login failed'
+    });
+  }
+});
+
+// POST /api/qrz/remove — remove saved QRZ credentials
+app.post('/api/qrz/remove', writeLimiter, requireWriteAuth, (req, res) => {
+  qrzSession.username = CONFIG._qrzUsername || '';
+  qrzSession.password = CONFIG._qrzPassword || '';
+  qrzSession.key = null;
+  qrzSession.expiry = 0;
+  qrzSession.lookupCount = 0;
+  qrzSession.lastError = null;
+  
+  try {
+    if (fs.existsSync(QRZ_CREDS_FILE)) {
+      fs.unlinkSync(QRZ_CREDS_FILE);
+    }
+  } catch (e) {}
+  
+  res.json({ 
+    success: true, 
+    // Still configured if .env has credentials
+    configured: isQRZConfigured(),
+    source: CONFIG._qrzUsername ? 'env' : 'none'
+  });
+});
+
+// ── Unified Callsign Lookup: QRZ → HamQTH → Prefix ──
+
 app.get('/api/callsign/:call', async (req, res) => {
   // Strip angle brackets and other junk that can arrive from DX cluster data
   const callsign = req.params.call.replace(/[<>]/g, '').toUpperCase().trim();
@@ -2818,50 +3121,38 @@ app.get('/api/callsign/:call', async (req, res) => {
     return res.json(cached.data);
   }
   
+  // SECURITY: Validate callsign format
+  if (!/^[A-Z0-9\/\-]{1,20}$/.test(callsign)) {
+    return res.status(400).json({ error: 'Invalid callsign format' });
+  }
+  
   logDebug('[Callsign Lookup] Looking up:', callsign);
   
   try {
-    // Try HamQTH XML API (no auth needed for basic lookup)
-    // SECURITY: Validate callsign format and encode for URL
-    if (!/^[A-Z0-9\/\-]{1,20}$/.test(callsign)) {
-      return res.status(400).json({ error: 'Invalid callsign format' });
+    let result = null;
+    
+    // 1. Try QRZ XML API (most accurate — user-supplied coords, geocoded, or grid-derived)
+    if (isQRZConfigured()) {
+      result = await qrzLookup(callsign);
     }
-    const response = await fetch(`https://www.hamqth.com/dxcc.php?callsign=${encodeURIComponent(callsign)}`, {
-      signal: AbortSignal.timeout(8000)
-    });
-    if (response.ok) {
-      const text = await response.text();
-      
-      // Parse basic info from response
-      const latMatch = text.match(/<lat>([^<]+)<\/lat>/);
-      const lonMatch = text.match(/<lng>([^<]+)<\/lng>/);
-      const countryMatch = text.match(/<name>([^<]+)<\/name>/);
-      const cqMatch = text.match(/<cq>([^<]+)<\/cq>/);
-      const ituMatch = text.match(/<itu>([^<]+)<\/itu>/);
-      
-      if (latMatch && lonMatch) {
-        const result = {
-          callsign,
-          lat: parseFloat(latMatch[1]),
-          lon: parseFloat(lonMatch[1]),
-          country: countryMatch ? countryMatch[1] : 'Unknown',
-          cqZone: cqMatch ? cqMatch[1] : '',
-          ituZone: ituMatch ? ituMatch[1] : ''
-        };
-        logDebug('[Callsign Lookup] Found:', result);
-        // Cache the result
-        callsignLookupCache.set(callsign, { data: result, timestamp: now });
-        return res.json(result);
+    
+    // 2. Fall back to HamQTH DXCC (no auth, but only country-level accuracy)
+    if (!result) {
+      result = await hamqthLookup(callsign);
+    }
+    
+    // 3. Last resort: estimate from callsign prefix
+    if (!result) {
+      const estimated = estimateLocationFromPrefix(callsign);
+      if (estimated) {
+        result = { ...estimated, source: 'prefix' };
       }
     }
     
-    // Fallback: estimate location from callsign prefix
-    const estimated = estimateLocationFromPrefix(callsign);
-    if (estimated) {
-      logDebug('[Callsign Lookup] Estimated from prefix:', estimated);
-      // Cache estimated results too
-      callsignLookupCache.set(callsign, { data: estimated, timestamp: now });
-      return res.json(estimated);
+    if (result) {
+      logDebug(`[Callsign Lookup] ${callsign}: ${result.source} -> ${result.lat?.toFixed(2)}, ${result.lon?.toFixed(2)}`);
+      callsignLookupCache.set(callsign, { data: result, timestamp: now });
+      return res.json(result);
     }
     
     res.status(404).json({ error: 'Callsign not found' });
@@ -2869,11 +3160,11 @@ app.get('/api/callsign/:call', async (req, res) => {
     if (error.name !== 'AbortError') {
       logErrorOnce('Callsign Lookup', error.message);
     }
-    // Still try prefix estimate on timeout/failure
+    // Still try prefix estimate on error
     const estimated = estimateLocationFromPrefix(callsign);
     if (estimated) {
-      callsignLookupCache.set(callsign, { data: estimated, timestamp: now });
-      return res.json(estimated);
+      callsignLookupCache.set(callsign, { data: { ...estimated, source: 'prefix' }, timestamp: now });
+      return res.json({ ...estimated, source: 'prefix' });
     }
     res.status(500).json({ error: 'Lookup failed' });
   }
@@ -6049,14 +6340,17 @@ function getStatus(reliability) {
   return 'CLOSED';
 }
 
-// QRZ Callsign lookup (requires API key)
+// QRZ Callsign lookup — redirects to unified callsign lookup (QRZ → HamQTH → prefix)
 app.get('/api/qrz/lookup/:callsign', async (req, res) => {
-  const { callsign } = req.params;
-  // Note: QRZ requires an API key - this is a placeholder
-  res.json({ 
-    message: 'QRZ lookup requires API key configuration',
-    callsign: callsign.toUpperCase()
-  });
+  // Forward to the unified lookup which already tries QRZ first
+  const callsign = req.params.callsign.toUpperCase().trim();
+  try {
+    const response = await fetch(`http://localhost:${PORT}/api/callsign/${encodeURIComponent(callsign)}`);
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (e) {
+    res.status(500).json({ error: 'Lookup failed' });
+  }
 });
 
 // ============================================
@@ -7350,6 +7644,7 @@ app.get('/api/config', (req, res) => {
       dxpeditions: true,
       wsjtxRelay: !!WSJTX_RELAY_KEY,
       settingsSync: SETTINGS_SYNC_ENABLED,
+      qrzLookup: isQRZConfigured(),
     },
     
     // Refresh intervals (ms)
