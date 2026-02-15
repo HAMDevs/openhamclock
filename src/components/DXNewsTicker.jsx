@@ -155,9 +155,13 @@ export const DXNewsTicker = ({ sidebar = false }) => {
             height: '100%',
             whiteSpace: 'nowrap',
             cursor: 'pointer',
-            animation: `dxnews-scroll ${animDuration}s linear infinite`,
+            animationName: 'dxnews-scroll',
+            animationDuration: `${animDuration}s`,
+            animationTimingFunction: 'linear',
+            animationIterationCount: 'infinite',
             animationPlayState: paused ? 'paused' : 'running',
-            paddingLeft: '100%'
+            paddingLeft: '100%',
+            willChange: 'transform'
           }}
           onClick={() => setPaused(!paused)}
           title={paused ? t("app.dxNews.resumeTooltip") : t("app.dxNews.pauseTooltip")}
