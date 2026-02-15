@@ -26,6 +26,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
   const [lon, setLon] = useState(config?.location?.lon || 0);
   const [theme, setTheme] = useState(config?.theme || 'dark');
   const [layout, setLayout] = useState(config?.layout || 'modern');
+  const [mouseZoom, setMouseZoom] = useState(config?.mouseZoom || 50);
   const [timezone, setTimezone] = useState(config?.timezone || '');
   const [dxClusterSource, setDxClusterSource] = useState(config?.dxClusterSource || 'dxspider-proxy');
   const [customDxCluster, setCustomDxCluster] = useState(config?.customDxCluster || { enabled: false, host: '', port: 7300 });
@@ -54,6 +55,13 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
   const [profileMessage, setProfileMessage] = useState(null);
   const fileInputRef = useRef(null);
 
+  // QRZ API state
+  const [qrzUsername, setQrzUsername] = useState('');
+  const [qrzPassword, setQrzPassword] = useState('');
+  const [qrzStatus, setQrzStatus] = useState(null); // { configured, hasSession, source, ... }
+  const [qrzTesting, setQrzTesting] = useState(false);
+  const [qrzMessage, setQrzMessage] = useState(null); // { type: 'success'|'error', text }
+
   const refreshProfiles = () => {
     setProfilesList(getProfiles());
     setActiveProfileName(getActiveProfile());
@@ -67,6 +75,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
       setLon(config.location?.lon || 0);
       setTheme(config.theme || 'dark');
       setLayout(config.layout || 'modern');
+      setMouseZoom(config.mouseZoom || 50);
       setTimezone(config.timezone || '');
       setDxClusterSource(config.dxClusterSource || 'dxspider-proxy');
       setCustomDxCluster(config.customDxCluster || { enabled: false, host: '', port: 7300 });
@@ -107,6 +116,16 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
     }
   }, [isOpen, activeTab]);
 
+  // Fetch QRZ status when profiles tab opens
+  useEffect(() => {
+    if (isOpen && activeTab === 'profiles') {
+      fetch('/api/qrz/status')
+        .then(r => r.json())
+        .then(data => setQrzStatus(data))
+        .catch(() => setQrzStatus(null));
+    }
+  }, [isOpen, activeTab]);
+
   // Track CTRL key state
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -142,7 +161,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
       // Also remove minimized state
       localStorage.removeItem(key + '-minimized');
     });
-    
+
     // Reload the page to apply position resets
     if (keys.length > 0) {
       window.location.reload();
@@ -228,6 +247,20 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
       }, 100);
     }
   };
+  const handleUpdateLayerConfig = (layerId, configDelta) => {
+    if (window.hamclockLayerControls?.updateLayerConfig) {
+
+      window.hamclockLayerControls.updateLayerConfig(layerId, configDelta);
+
+      setLayers(prevLayers =>
+        prevLayers.map(l =>
+          l.id === layerId
+            ? { ...l, config: { ...(l.config || {}), ...configDelta } }
+            : l
+        )
+      );
+    }
+  };
 
   const handleOpacityChange = (layerId, opacity) => {
     if (window.hamclockLayerControls) {
@@ -244,6 +277,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
       location: { lat: parseFloat(lat), lon: parseFloat(lon) },
       theme,
       layout,
+      mouseZoom,
       timezone,
       dxClusterSource,
       customDxCluster,
@@ -558,6 +592,31 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
             >
               {t('station.settings.useLocation')}
             </button>
+
+            {/* Mouse wheel zoom factor */}
+            <div style={{ marginBottom: '31px' }}>
+              <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                {t('station.settings.mouseZoom')}
+                <input
+                  type="range"
+                  min="1"
+                  max="100"
+                  value={mouseZoom}
+                  onChange={(e) => setMouseZoom(e.target.value)}
+                  style={{
+                    width: '100%',
+                    cursor: 'pointer',
+                    marginTop: '3px'
+                  }}
+                />
+              </label>
+              <span style={{ float: 'left', fontSize: '11px', color: 'var(--text-muted)' }}>
+                {t('station.settings.mouseZoom.describeMin')}
+              </span>
+              <span style={{ float: 'right', fontSize: '11px', color: 'var(--text-muted)' }}>
+                {t('station.settings.mouseZoom.describeMax')}
+              </span>
+            </div>
 
             {/* Theme */}
             <div style={{ marginBottom: '8px' }}>
@@ -1243,114 +1302,116 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
             </div>
 
             {layers.length > 0 ? (
-              layers.map(layer => (
-                <div key={layer.id} style={{
-                  background: 'var(--bg-tertiary)',
-                  border: `1px solid ${layer.enabled ? 'var(--accent-amber)' : 'var(--border-color)'}`,
-                  borderRadius: '8px',
-                  padding: '14px',
-                  marginBottom: '12px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <label style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      cursor: 'pointer',
-                      flex: 1
-                    }}>
-                      <input
-                        type="checkbox"
-                        checked={layer.enabled}
-                        onChange={() => handleToggleLayer(layer.id)}
-                        style={{
-                          width: '18px',
-                          height: '18px',
-                          cursor: 'pointer'
-                        }}
-                      />
-                      <span style={{ fontSize: '18px' }}>{layer.icon}</span>
-                      <div>
-                        <div style={{
-                          color: layer.enabled ? 'var(--accent-amber)' : 'var(--text-primary)',
-                          fontSize: '14px',
-                          fontWeight: '600',
-                          fontFamily: 'JetBrains Mono, monospace'
-                        }}>
-                          {layer.name.startsWith('plugins.') ? t(layer.name) : layer.name}
-                        </div>
-                        {layer.description && (
+              layers
+                .filter(layer => layer.category !== 'satellites') // Correctly filter out satellites
+                .map(layer => (
+                  <div key={layer.id} style={{
+                    background: 'var(--bg-tertiary)',
+                    border: `1px solid ${layer.enabled ? 'var(--accent-amber)' : 'var(--border-color)'}`,
+                    borderRadius: '8px',
+                    padding: '14px',
+                    marginBottom: '12px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <label style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        cursor: 'pointer',
+                        flex: 1
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={layer.enabled}
+                          onChange={() => handleToggleLayer(layer.id)}
+                          style={{
+                            width: '18px',
+                            height: '18px',
+                            cursor: 'pointer'
+                          }}
+                        />
+                        <span style={{ fontSize: '18px' }}>{layer.icon}</span>
+                        <div>
                           <div style={{
-                            fontSize: '11px',
-                            color: 'var(--text-muted)',
-                            marginTop: '2px'
+                            color: layer.enabled ? 'var(--accent-amber)' : 'var(--text-primary)',
+                            fontSize: '14px',
+                            fontWeight: '600',
+                            fontFamily: 'JetBrains Mono, monospace'
                           }}>
-                            {layer.description.startsWith('plugins.') ? t(layer.description) : layer.description}
+                            {layer.name.startsWith('plugins.') ? t(layer.name) : layer.name}
                           </div>
+                          {layer.description && (
+                            <div style={{
+                              fontSize: '11px',
+                              color: 'var(--text-muted)',
+                              marginTop: '2px'
+                            }}>
+                              {layer.description.startsWith('plugins.') ? t(layer.description) : layer.description}
+                            </div>
+                          )}
+                        </div>
+                      </label>
+                      <span style={{
+                        fontSize: '11px',
+                        textTransform: 'uppercase',
+                        color: 'var(--text-secondary)',
+                        background: 'var(--bg-hover)',
+                        padding: '2px 8px',
+                        borderRadius: '3px'
+                      }}>
+                        {layer.category}
+                      </span>
+                    </div>
+
+                    {layer.enabled && (
+                      <div style={{ paddingLeft: '38px', marginTop: '12px' }}>
+                        <label style={{
+                          display: 'block',
+                          fontSize: '11px',
+                          color: 'var(--text-muted)',
+                          marginBottom: '6px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px'
+                        }}>
+                          {t('station.settings.layers.opacity')}: {Math.round(layer.opacity * 100)}%
+                        </label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={layer.opacity * 100}
+                          onChange={(e) => handleOpacityChange(layer.id, parseFloat(e.target.value) / 100)}
+                          style={{
+                            width: '100%',
+                            cursor: 'pointer'
+                          }}
+                        />
+
+                        {/* CTRL+Click Reset Button - Hidden unless CTRL is pressed */}
+                        {ctrlPressed && ['lightning', 'wspr', 'rbn', 'grayline', 'n3fjp_logged_qsos', 'voacap-heatmap'].includes(layer.id) && (
+                          <button
+                            onClick={() => resetPopupPositions(layer.id)}
+                            style={{
+                              marginTop: '12px',
+                              padding: '8px 12px',
+                              background: 'var(--accent-red)',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              fontSize: '11px',
+                              fontWeight: '600',
+                              textTransform: 'uppercase',
+                              width: '100%'
+                            }}
+                          >
+                            🔄 RESET POPUPS
+                          </button>
                         )}
                       </div>
-                    </label>
-                    <span style={{
-                      fontSize: '11px',
-                      textTransform: 'uppercase',
-                      color: 'var(--text-secondary)',
-                      background: 'var(--bg-hover)',
-                      padding: '2px 8px',
-                      borderRadius: '3px'
-                    }}>
-                      {layer.category}
-                    </span>
+                    )}
                   </div>
-
-                  {layer.enabled && (
-                    <div style={{ paddingLeft: '38px', marginTop: '12px' }}>
-                      <label style={{
-                        display: 'block',
-                        fontSize: '11px',
-                        color: 'var(--text-muted)',
-                        marginBottom: '6px',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px'
-                      }}>
-                        {t('station.settings.layers.opacity')}: {Math.round(layer.opacity * 100)}%
-                      </label>
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={layer.opacity * 100}
-                        onChange={(e) => handleOpacityChange(layer.id, parseFloat(e.target.value) / 100)}
-                        style={{
-                          width: '100%',
-                          cursor: 'pointer'
-                        }}
-                      />
-                      
-                      {/* CTRL+Click Reset Button - Hidden unless CTRL is pressed */}
-                      {ctrlPressed && ['lightning', 'wspr', 'rbn', 'grayline', 'n3fjp_logged_qsos', 'voacap-heatmap'].includes(layer.id) && (
-                        <button
-                          onClick={() => resetPopupPositions(layer.id)}
-                          style={{
-                            marginTop: '12px',
-                            padding: '8px 12px',
-                            background: 'var(--accent-red)',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: '11px',
-                            fontWeight: '600',
-                            textTransform: 'uppercase',
-                            width: '100%'
-                          }}
-                        >
-                          🔄 RESET POPUPS
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))
+                ))
             ) : (
               <div style={{
                 textAlign: 'center',
@@ -1367,6 +1428,104 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
         {/* Satellites Tab */}
         {activeTab === 'satellites' && (
           <div>
+            {/* 1. Plugin Layer Toggle Section */}
+            <div style={{ marginBottom: '20px' }}>
+              {layers
+                .filter(layer => layer.category === 'satellites')
+                .map(layer => (
+                  <div key={layer.id} style={{
+                    background: 'var(--bg-tertiary)',
+                    border: `1px solid ${layer.enabled ? 'var(--accent-amber)' : 'var(--border-color)'}`,
+                    borderRadius: '8px',
+                    padding: '14px',
+                    marginBottom: '12px'
+                  }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={layer.enabled}
+                        onChange={() => handleToggleLayer(layer.id)}
+                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                      />
+                      <span style={{ fontSize: '18px' }}>🛰️</span>
+                      <div>
+                        <div style={{
+                          color: layer.enabled ? 'var(--accent-amber)' : 'var(--text-primary)',
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          fontFamily: 'JetBrains Mono, monospace'
+                        }}>
+                          {layer.name}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          {layer.description}
+                        </div>
+                      </div>
+                    </label>
+
+                    {layer.enabled && (
+                      <div style={{ paddingLeft: '38px', marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {/* Sub-Toggles for Tracks and Footprints */}
+                        <div style={{ display: 'flex', gap: '15px' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={layer.config?.showTracks !== false}
+                              onChange={(e) => handleUpdateLayerConfig(layer.id, { showTracks: e.target.checked })}
+                            /> Track Lines
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={layer.config?.showFootprints !== false}
+                              onChange={(e) => handleUpdateLayerConfig(layer.id, { showFootprints: e.target.checked })}
+                            /> Footprints
+                          </label>
+                        </div>
+                        {/* Lead Time Slider WIP
+						<div style={{ marginTop: '8px' }}>
+						  <label style={{ 
+							display: 'flex', 
+							justifyContent: 'space-between', 
+							fontSize: '10px', 
+							color: 'var(--text-muted)', 
+							textTransform: 'uppercase' 
+						  }}>
+							<span>Track Prediction (Lead Time)</span>
+							<span style={{ color: 'var(--accent-amber)' }}>{layer.config?.leadTimeMins || 45} min</span>
+						  </label>
+						  <input
+							type="range"
+							min="15"
+							max="120"
+							step="5"
+							value={layer.config?.leadTimeMins || 45}
+							onChange={(e) => handleUpdateLayerConfig(layer.id, { leadTimeMins: parseInt(e.target.value) })}
+							style={{ width: '100%', cursor: 'pointer' }}
+						  />
+						</div> */}
+
+                        {/* Opacity Slider */}
+                        <div>
+                          <label style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                            Opacity: {Math.round(layer.opacity * 100)}%
+                          </label>
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={layer.opacity * 100}
+                            onChange={(e) => handleOpacityChange(layer.id, parseFloat(e.target.value) / 100)}
+                            style={{ width: '100%', cursor: 'pointer' }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+            </div>
+
+            {/* 2. Existing Satellite Filter Controls */}
             <div style={{
               display: 'flex',
               justifyContent: 'space-between',
@@ -1416,10 +1575,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
             </div>
 
             {/* Search Box */}
-            <div style={{
-              position: 'relative',
-              marginBottom: '12px'
-            }}>
+            <div style={{ position: 'relative', marginBottom: '12px' }}>
               <input
                 type="text"
                 value={satelliteSearch}
@@ -1456,6 +1612,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
               )}
             </div>
 
+            {/* Satellite Grid */}
             <div style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(2, 1fr)',
@@ -1471,12 +1628,8 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                 .sort((a, b) => {
                   const aSelected = satelliteFilters.includes(a.name);
                   const bSelected = satelliteFilters.includes(b.name);
-
-                  // Selected satellites come first
                   if (aSelected && !bSelected) return -1;
                   if (!aSelected && bSelected) return 1;
-
-                  // Then alphabetically by name
                   return a.name.localeCompare(b.name);
                 })
                 .map(sat => {
@@ -1880,6 +2033,139 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
               )}
             </div>
 
+            {/* QRZ.com XML API Credentials */}
+            <div style={{
+              padding: '12px',
+              background: 'var(--bg-tertiary)',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)',
+              marginBottom: '12px'
+            }}>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--accent-amber)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>📡 QRZ.com Callsign Lookup</span>
+                {qrzStatus?.configured && (
+                  <span style={{
+                    fontSize: '10px', fontWeight: '500', padding: '1px 6px', borderRadius: '3px',
+                    background: qrzStatus.hasSession ? 'rgba(46, 204, 113, 0.15)' : 'rgba(241, 196, 15, 0.15)',
+                    color: qrzStatus.hasSession ? '#2ecc71' : '#f1c40f'
+                  }}>
+                    {qrzStatus.hasSession ? '● Connected' : '○ Configured'}
+                    {qrzStatus.source === 'env' ? ' (env)' : ''}
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.4 }}>
+                Enables precise station locations from <a href="https://www.qrz.com/i/subscriptions.html" target="_blank" rel="noopener" style={{ color: 'var(--accent-blue)' }}>QRZ.com</a> user
+                profiles (user-supplied coordinates, geocoded addresses, grid squares).
+                Without this, locations fall back to HamQTH (country-level only).
+                Requires a QRZ Logbook Data subscription.
+              </div>
+              {qrzStatus?.source === 'env' ? (
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '8px', background: 'var(--bg-primary)', borderRadius: '4px' }}>
+                  ✓ Credentials configured via <code style={{ background: 'var(--bg-tertiary)', padding: '1px 4px', borderRadius: '2px' }}>QRZ_USERNAME</code> / <code style={{ background: 'var(--bg-tertiary)', padding: '1px 4px', borderRadius: '2px' }}>QRZ_PASSWORD</code> in .env file
+                  {qrzStatus.lookupCount > 0 && <span style={{ color: 'var(--accent-green)' }}> — {qrzStatus.lookupCount} lookups this session</span>}
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="QRZ Username (callsign)"
+                      value={qrzUsername}
+                      onChange={(e) => setQrzUsername(e.target.value)}
+                      style={{
+                        flex: 1, padding: '8px 12px', background: 'var(--bg-primary)',
+                        border: '1px solid var(--border-color)', borderRadius: '4px',
+                        color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                    <input
+                      type="password"
+                      placeholder="QRZ Password"
+                      value={qrzPassword}
+                      onChange={(e) => setQrzPassword(e.target.value)}
+                      style={{
+                        flex: 1, padding: '8px 12px', background: 'var(--bg-primary)',
+                        border: '1px solid var(--border-color)', borderRadius: '4px',
+                        color: 'var(--text-primary)', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <button
+                      disabled={qrzTesting || !qrzUsername.trim() || !qrzPassword.trim()}
+                      onClick={async () => {
+                        setQrzTesting(true);
+                        setQrzMessage(null);
+                        try {
+                          const res = await fetch('/api/qrz/configure', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ username: qrzUsername.trim(), password: qrzPassword.trim() })
+                          });
+                          const data = await res.json();
+                          if (data.success) {
+                            setQrzMessage({ type: 'success', text: 'Connected to QRZ.com successfully!' });
+                            setQrzPassword('');
+                            // Refresh status
+                            const st = await fetch('/api/qrz/status').then(r => r.json());
+                            setQrzStatus(st);
+                          } else {
+                            setQrzMessage({ type: 'error', text: data.error || 'Login failed' });
+                          }
+                        } catch (e) {
+                          setQrzMessage({ type: 'error', text: 'Connection error' });
+                        }
+                        setQrzTesting(false);
+                      }}
+                      style={{
+                        padding: '6px 14px', fontSize: '11px', fontWeight: '600', borderRadius: '4px',
+                        border: 'none', cursor: (qrzTesting || !qrzUsername.trim() || !qrzPassword.trim()) ? 'not-allowed' : 'pointer',
+                        background: 'var(--accent-amber)', color: '#000', opacity: (qrzTesting || !qrzUsername.trim() || !qrzPassword.trim()) ? 0.5 : 1
+                      }}
+                    >
+                      {qrzTesting ? 'Testing...' : 'Save & Test'}
+                    </button>
+                    {qrzStatus?.configured && qrzStatus.source !== 'env' && (
+                      <button
+                        onClick={async () => {
+                          await fetch('/api/qrz/remove', { method: 'POST' });
+                          setQrzUsername('');
+                          setQrzPassword('');
+                          setQrzMessage(null);
+                          const st = await fetch('/api/qrz/status').then(r => r.json());
+                          setQrzStatus(st);
+                        }}
+                        style={{
+                          padding: '6px 12px', fontSize: '11px', borderRadius: '4px',
+                          border: '1px solid var(--border-color)', cursor: 'pointer',
+                          background: 'transparent', color: 'var(--text-muted)'
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                    {qrzStatus?.configured && qrzStatus.lookupCount > 0 && (
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                        {qrzStatus.lookupCount} lookups this session
+                      </span>
+                    )}
+                  </div>
+                  {qrzMessage && (
+                    <div style={{
+                      marginTop: '6px', fontSize: '11px', padding: '6px 10px', borderRadius: '4px',
+                      background: qrzMessage.type === 'success' ? 'rgba(46, 204, 113, 0.1)' : 'rgba(231, 76, 60, 0.1)',
+                      color: qrzMessage.type === 'success' ? '#2ecc71' : '#e74c3c'
+                    }}>
+                      {qrzMessage.type === 'success' ? '✓' : '✗'} {qrzMessage.text}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
             {/* Open-Meteo API Key (optional) */}
             <div style={{
               padding: '12px',
@@ -1905,7 +2191,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                     const val = e.target.value.trim();
                     if (val) { localStorage.setItem('ohc_openmeteo_apikey', val); }
                     else { localStorage.removeItem('ohc_openmeteo_apikey'); }
-                  } catch {}
+                  } catch { }
                 }}
                 style={{
                   width: '100%',
