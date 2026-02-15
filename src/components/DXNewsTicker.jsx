@@ -13,7 +13,7 @@ function isDXNewsEnabled() {
       const layers = JSON.parse(stored);
       return layers.showDXNews !== false;
     }
-  } catch {}
+  } catch { }
   return true; // default on
 }
 
@@ -24,11 +24,12 @@ export const DXNewsTicker = ({ sidebar = false }) => {
   const tickerRef = useRef(null);
   const contentRef = useRef(null);
   const [animDuration, setAnimDuration] = useState(120);
+  const [paused, setPaused] = useState(false);
 
   // Listen for mapLayers changes (custom event for same-tab, storage for cross-tab)
   useEffect(() => {
     const checkVisibility = () => setVisible(isDXNewsEnabled());
-    
+
     window.addEventListener('mapLayersChanged', checkVisibility);
     window.addEventListener('storage', checkVisibility);
     return () => {
@@ -40,7 +41,7 @@ export const DXNewsTicker = ({ sidebar = false }) => {
   // Fetch news
   useEffect(() => {
     if (!visible) return;
-    
+
     const fetchNews = async () => {
       try {
         const res = await fetch('/api/dxnews');
@@ -151,9 +152,13 @@ export const DXNewsTicker = ({ sidebar = false }) => {
             alignItems: 'center',
             height: '100%',
             whiteSpace: 'nowrap',
+            cursor: 'pointer',
             animation: `dxnews-scroll ${animDuration}s linear infinite`,
+            animationPlayState: paused ? 'paused' : 'running',
             paddingLeft: '100%'
           }}
+          onClick={() => setPaused(!paused)}
+          title={paused ? "Click to resume scrolling" : "Click to pause scrolling"}
         >
           {tickerItems.map((item, i) => (
             <span key={i} style={{ display: 'inline-flex', alignItems: 'center' }}>
