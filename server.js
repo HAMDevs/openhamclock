@@ -6552,15 +6552,15 @@ function calculateEnhancedReliability(freq, distance, midLat, midLon, hour, sfi,
   const muf = calculateMUF(distance, midLat, midLon, hour, sfi, ssn, hourIonoData);
   const luf = calculateLUF(distance, midLat, hour, sfi, kIndex);
   
-  // Apply signal margin from mode + power
-  // Positive margin (e.g. FT8 or high power) effectively widens the usable window:
-  //   - Extends effective MUF (weak-signal modes can decode signals near/above MUF)
+  // Apply signal margin from mode + power to MUF/LUF boundaries.
+  // Positive margin (e.g. FT8 or high power) widens the usable window:
+  //   - Extends effective MUF (more power/sensitivity can use marginal propagation)
   //   - Reduces effective LUF (more power overcomes D-layer absorption)
-  // Each dB of margin extends MUF by ~1.2% and reduces LUF by ~0.8%
-  const effectiveMuf = muf * (1 + signalMarginDb * 0.012);
-  const effectiveLuf = luf * Math.max(0.1, 1 - signalMarginDb * 0.008);
+  // Scale: ~2% per dB for MUF, ~1.5% per dB for LUF
+  const effectiveMuf = muf * (1 + signalMarginDb * 0.020);
+  const effectiveLuf = luf * Math.max(0.1, 1 - signalMarginDb * 0.015);
   
-  // Calculate reliability based on frequency position relative to effective MUF/LUF
+  // Calculate BASE reliability from frequency position relative to effective MUF/LUF
   let reliability = 0;
   
   if (freq > effectiveMuf * 1.1) {
@@ -6595,6 +6595,32 @@ function calculateEnhancedReliability(freq, distance, midLat, midLon, hour, sfi,
         // Above OWF - reliability decreases as we approach MUF
         reliability = 95 - ((position - optimalPosition) / (1 - optimalPosition)) * 45;
       }
+    }
+  }
+  
+  // ── Power/mode signal margin: direct effect on reliability ──
+  // In real propagation, more power = higher received SNR = better probability
+  // of maintaining a link. A marginal path (30% reliability) at 100W SSB becomes
+  // much more reliable at 1000W, and much worse at 5W.
+  //
+  // signalMarginDb: 0 at SSB/100W, +10 at SSB/1000W, -13 at SSB/5W, +34 at FT8/100W
+  //
+  // Apply as a sigmoid-shaped boost/penalty centered on the baseline reliability.
+  // Positive margin pushes reliability toward 99, negative pushes toward 0.
+  if (signalMarginDb !== 0 && reliability > 0 && reliability < 99) {
+    // Convert dB margin to a reliability shift.
+    // Each 10 dB roughly doubles (or halves) the chance of a usable link.
+    // Use logistic scaling so we don't exceed 0-99 bounds.
+    const marginFactor = signalMarginDb / 15; // normalized: ±1 at ±15dB
+    
+    if (marginFactor > 0) {
+      // Boost: push toward 99. Marginal paths benefit most.
+      const headroom = 99 - reliability;
+      reliability += headroom * (1 - Math.exp(-marginFactor * 1.2));
+    } else {
+      // Penalty: push toward 0. Good paths degrade.
+      const room = reliability;
+      reliability -= room * (1 - Math.exp(marginFactor * 1.2));
     }
   }
   
