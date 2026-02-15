@@ -4,6 +4,7 @@
  * Respects showDXNews setting from mapLayers (reads from localStorage directly as fallback)
  */
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
 // Check if DX News is enabled (reads directly from localStorage as belt-and-suspenders)
 function isDXNewsEnabled() {
@@ -25,6 +26,7 @@ export const DXNewsTicker = ({ sidebar = false }) => {
   const contentRef = useRef(null);
   const [animDuration, setAnimDuration] = useState(120);
   const [paused, setPaused] = useState(false);
+  const { t } = useTranslation();
 
   // Listen for mapLayers changes (custom event for same-tab, storage for cross-tab)
   useEffect(() => {
@@ -158,7 +160,7 @@ export const DXNewsTicker = ({ sidebar = false }) => {
             paddingLeft: '100%'
           }}
           onClick={() => setPaused(!paused)}
-          title={paused ? "Click to resume scrolling" : "Click to pause scrolling"}
+          title={paused ? t("app.dxNews.resumeTooltip") : t("app.dxNews.pauseTooltip")}
         >
           {tickerItems.map((item, i) => (
             <span key={i} style={{ display: 'inline-flex', alignItems: 'center' }}>
