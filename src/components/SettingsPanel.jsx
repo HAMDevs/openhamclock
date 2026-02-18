@@ -59,7 +59,26 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
     }
   });
 
-  // N3FJP UI settings (persisted)
+  
+  // DX Weather (local-only; build-time gated via VITE_ENABLE_DX_WEATHER)
+  const dxWeatherBuildEnabled = (() => {
+    try {
+      const v = import.meta?.env?.VITE_ENABLE_DX_WEATHER;
+      return String(v || '').toLowerCase() === 'true';
+    } catch {
+      return false;
+    }
+  })();
+
+  const [dxWeatherEnabled, setDxWeatherEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('ohc_dx_weather_enabled') === '1';
+    } catch {
+      return false;
+    }
+  });
+
+// N3FJP UI settings (persisted)
   const [n3fjpDisplayMinutes, setN3fjpDisplayMinutes] = useState(() => {
     try {
       const v = parseInt(localStorage.getItem('n3fjp_display_minutes') || '15', 10);
@@ -1570,6 +1589,51 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                   </div>
                 </details>
 
+
+              {/* DX Weather (Map overlays) */}
+              {dxWeatherBuildEnabled && (
+                <div style={{
+                  borderTop: '1px solid rgba(255,255,255,0.08)',
+                  paddingTop: 12,
+                  marginTop: 12
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                    <div>
+                      <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>🌦️ DX Weather</div>
+                      <div style={{ color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.45 }}>
+                        Adds a small weather bubble on hover and weather details inside map popups (DX spots, POTA/SOTA, and the movable DX marker). Disabled by default and only available in local mode.
+                      </div>
+                    </div>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>
+                      <input
+                        type="checkbox"
+                        disabled={!isLocalInstall}
+                        checked={!!dxWeatherEnabled && isLocalInstall}
+                        onChange={(e) => {
+                          const next = !!e.target.checked;
+                          setDxWeatherEnabled(next);
+                          try { localStorage.setItem('ohc_dx_weather_enabled', next ? '1' : '0'); } catch {}
+                          try { window.dispatchEvent(new Event('ohc-dx-weather-config-changed')); } catch {}
+                        }}
+                      />
+                      Enable
+                    </label>
+                  </div>
+
+                  {!isLocalInstall && (
+                    <div style={{ marginTop: 8, color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.45 }}>
+                      Hosted mode disables this feature to protect shared weather-provider rate limits.
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 10, color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.45 }}>
+                    Tip: A 5–10 minute cache is used automatically and hover fetches are debounced.
+                  </div>
+                </div>
+              )}
+
+
                 {!isLocalInstall && (
                   <div
                     style={{
@@ -1786,15 +1850,6 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
               padding: '14px',
               marginBottom: '16px'
             }}>
-              <div style={{
-                fontSize: '11px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-                color: 'var(--text-muted)',
-                marginBottom: '10px'
-              }}>
-                Map Overlays
-              </div>
               <label style={{
                 display: 'flex',
                 alignItems: 'center',

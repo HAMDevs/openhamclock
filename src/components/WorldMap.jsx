@@ -2,9 +2,8 @@
  * WorldMap Component
  * Leaflet map with DE/DX markers, terminator, DX paths, POTA, satellites, PSKReporter
  */
-import { useRef, useEffect, useState, useMemo } from "react";
-import { useTranslation } from "react-i18next";
-import { MAP_STYLES } from "../utils/config.js";
+import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react';
+import { MAP_STYLES } from '../utils/config.js';
 import {
   calculateGridSquare,
   getSunPosition,
@@ -12,36 +11,39 @@ import {
   getGreatCirclePoints,
   replicatePath,
   replicatePoint,
-} from "../utils/geo.js";
-import { getBandColor } from "../utils/callsign.js";
-import {
-  BAND_LEGEND_ORDER,
-  getBandColorForBand,
-  getBandTextColor,
-  getEffectiveBandColors,
-  loadBandColorOverrides,
-  saveBandColorOverrides,
-} from "../utils/bandColors.js";
-import { createTerminator } from "../utils/terminator.js";
-import { getAllLayers } from "../plugins/layerRegistry.js";
-import useLocalInstall from "../hooks/app/useLocalInstall.js";
-import PluginLayer from "./PluginLayer.jsx";
-import AzimuthalMap from "./AzimuthalMap.jsx";
-import { DXNewsTicker } from "./DXNewsTicker.jsx";
+  normalizeLon,
+  classifyTwilight,
+  calculateSolarElevation,
+} from '../utils/geo.js';
+import { getBandColor } from '../utils/callsign.js';
+import { createTerminator } from '../utils/terminator.js';
+import { getAllLayers } from '../plugins/layerRegistry.js';
+import useLocalInstall from '../hooks/app/useLocalInstall.js';
+import { IconSatellite, IconTag, IconSun, IconMoon } from './Icons.jsx';
+import PluginLayer from './PluginLayer.jsx';
+import AzimuthalMap from './AzimuthalMap.jsx';
+import { DXNewsTicker } from './DXNewsTicker.jsx';
 import { filterDXPaths } from "../utils";
+import { CallsignWeatherOverlay } from './CallsignWeatherOverlay.jsx';
+import { getCallsignWeather } from '../utils/callsignWeather.js';
 
 // SECURITY: Escape HTML to prevent XSS in Leaflet popups/tooltips
 // DX cluster data, POTA/SOTA spots, and WSJT-X decodes come from external sources
 // and could contain malicious HTML/script tags in callsigns, comments, or park names.
 function esc(str) {
-  if (str == null) return "";
+  if (str == null) return '';
   return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
+// Normalize callsign keys used for DX hover/highlight matching
+const normalizeCallsignKey = (v) => (v || "").toString().toUpperCase().trim();
+
+
+
 
 export const WorldMap = ({
   deLocation,
@@ -51,6 +53,7 @@ export const WorldMap = ({
   potaSpots,
   wwffSpots,
   sotaSpots,
+  mySpots,
   dxPaths,
   dxFilters,
   satellites,
@@ -64,25 +67,25 @@ export const WorldMap = ({
   showWWFF,
   showWWFFLabels = true,
   showSOTA,
-  showSOTALabels = true,
   showPSKReporter,
   showWSJTX,
+  onToggleSatellites,
   onSpotClick,
   hoveredSpot,
-  callsign = "N0CALL",
+  onHoverSpot,
+  callsign = 'N0CALL',
   showDXNews = true,
   hideOverlays,
   lowMemoryMode = false,
-  units = "imperial",
+  units = 'imperial',
   mouseZoom,
   showRotatorBearing = false,
   rotatorAzimuth = null,
   rotatorLastGoodAzimuth = null,
   rotatorIsStale = false,
   rotatorControlEnabled,
-  onRotatorTurnRequest,
+  onRotatorTurnRequest
 }) => {
-  const { t } = useTranslation();
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const tileLayerRef = useRef(null);
@@ -94,10 +97,49 @@ export const WorldMap = ({
   const potaMarkersRef = useRef([]);
   const wwffMarkersRef = useRef([]);
   const sotaMarkersRef = useRef([]);
+  const mySpotsMarkersRef = useRef([]);
+  const mySpotsLinesRef = useRef([]);
   const dxPathsLinesRef = useRef([]);
   const dxPathsMarkersRef = useRef([]);
+  // DX highlight state (style existing polylines via refs; no layer rebuilds)
+  const dxLineIndexRef = useRef(new Map());
+  const dxHighlightKeyRef = useRef("");
+  const dxHighlightLockedRef = useRef(false);
+  const satMarkersRef = useRef([]);
+  const satTracksRef = useRef([]);
   const pskMarkersRef = useRef([]);
   const wsjtxMarkersRef = useRef([]);
+
+  // --- DX highlight helpers (click highlight + DX Cluster panel hover highlight) ---
+  const clearDXHighlight = useCallback(() => {
+    const prevKey = dxHighlightKeyRef.current;
+    if (!prevKey) return;
+    const prevLines = dxLineIndexRef.current.get(prevKey) || [];
+    prevLines.forEach((ln) => {
+      const base = ln._ohcBaseStyle || { color: ln.options.color, weight: ln.options.weight, opacity: ln.options.opacity };
+      ln.setStyle(base);
+    });
+    dxHighlightKeyRef.current = "";
+  }, []);
+
+  const setDXHighlight = useCallback((key) => {
+    const k = normalizeCallsignKey(key);
+    if (!k) return;
+    if (dxHighlightKeyRef.current === k) return;
+
+    // restore previous
+    clearDXHighlight();
+
+    const lines = dxLineIndexRef.current.get(k) || [];
+    if (!lines.length) return;
+
+    lines.forEach((ln) => {
+      ln.setStyle({ color: "#ffffff", weight: 4, opacity: 1 });
+      if (ln.bringToFront) ln.bringToFront();
+    });
+
+    dxHighlightKeyRef.current = k;
+  }, [clearDXHighlight]);
   const countriesLayerRef = useRef([]);
   const dxLockedRef = useRef(dxLocked);
   const rotatorLineRef = useRef(null);
@@ -108,7 +150,7 @@ export const WorldMap = ({
 
   // Calculate grid locator from DE location for plugins
   const deLocator = useMemo(() => {
-    if (!deLocation?.lat || !deLocation?.lon) return "";
+    if (!deLocation?.lat || !deLocation?.lon) return '';
     return calculateGridSquare(deLocation.lat, deLocation.lon);
   }, [deLocation?.lat, deLocation?.lon]);
 
@@ -117,7 +159,7 @@ export const WorldMap = ({
     if (deLocation?.lat && deLocation?.lon) {
       window.deLocation = {
         lat: deLocation.lat,
-        lon: deLocation.lon,
+        lon: deLocation.lon
       };
     }
     return () => {
@@ -131,39 +173,50 @@ export const WorldMap = ({
     dxLockedRef.current = dxLocked;
   }, [dxLocked]);
 
-  useEffect(() => {
-    const onBandColorsChange = () => {
-      setBandColorOverrides(loadBandColorOverrides());
-      setBandColorVersion((v) => v + 1);
-    };
-    window.addEventListener(
-      "openhamclock-band-colors-change",
-      onBandColorsChange,
-    );
-    return () =>
-      window.removeEventListener(
-        "openhamclock-band-colors-change",
-        onBandColorsChange,
-      );
-  }, []);
-
   // Plugin system refs and state
+  const pluginLayersRef = useRef({});
   const [pluginLayerStates, setPluginLayerStates] = useState({});
   const isLocalInstall = useLocalInstall();
+
+
+  // DX Weather (local-only; build-time gated via VITE_ENABLE_DX_WEATHER)
+  const dxWeatherBuildEnabled = (() => {
+    try {
+      const v = import.meta?.env?.VITE_ENABLE_DX_WEATHER;
+      return String(v || '').toLowerCase() === 'true';
+    } catch {
+      return false;
+    }
+  })();
+
+  const [dxWeatherEnabled, setDxWeatherEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('ohc_dx_weather_enabled') === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  const dxWeatherAllowed = dxWeatherBuildEnabled && isLocalInstall && dxWeatherEnabled;
 
   const [integrationsRev, setIntegrationsRev] = useState(0);
 
   // Re-evaluate feature-gated integrations when toggles change in Settings
   useEffect(() => {
-    const bump = () => setIntegrationsRev(v => v + 1);
+    const bump = () => {
+      setIntegrationsRev(v => v + 1);
+      try { setDxWeatherEnabled(localStorage.getItem('ohc_dx_weather_enabled') === '1'); } catch {}
+    };
     try {
       window.addEventListener('ohc-n3fjp-config-changed', bump);
       window.addEventListener('ohc-rotator-config-changed', bump);
+      window.addEventListener('ohc-dx-weather-config-changed', bump);
     } catch {}
     return () => {
       try {
         window.removeEventListener('ohc-n3fjp-config-changed', bump);
         window.removeEventListener('ohc-rotator-config-changed', bump);
+        window.removeEventListener('ohc-dx-weather-config-changed', bump);
       } catch {}
     };
   }, []);
@@ -186,28 +239,12 @@ export const WorldMap = ({
   // Load map style from localStorage
   const getStoredMapSettings = () => {
     try {
-      const stored = localStorage.getItem("openhamclock_mapSettings");
+      const stored = localStorage.getItem('openhamclock_mapSettings');
       return stored ? JSON.parse(stored) : {};
-    } catch (e) {
-      return {};
-    }
+    } catch (e) { return {}; }
   };
   const storedSettings = getStoredMapSettings();
-  const [mapStyle, setMapStyle] = useState(storedSettings.mapStyle || "dark");
-  const [bandColorVersion, setBandColorVersion] = useState(0);
-  const [editingBand, setEditingBand] = useState(null);
-  const [editingColor, setEditingColor] = useState("#ff6666");
-  const [bandColorOverrides, setBandColorOverrides] = useState(() =>
-    loadBandColorOverrides(),
-  );
-  // Tracks whether window.L (Leaflet, loaded via <script> in index.html) is ready.
-  // Leaflet is NOT bundled by Vite — it's a self-hosted vendor file. If it hasn't
-  // loaded by the time this component mounts, we poll and flip this flag to retry.
-  const [leafletReady, setLeafletReady] = useState(() => typeof window.L !== "undefined");
-  const effectiveBandColors = useMemo(
-    () => getEffectiveBandColors(bandColorOverrides),
-    [bandColorOverrides],
-  );
+  const [mapStyle, setMapStyle] = useState(storedSettings.mapStyle || 'dark');
 
   const getScaledZoomLevel = (inverseMultiplier) => {
     // Ensure the input stays within 1–100
@@ -218,39 +255,34 @@ export const WorldMap = ({
 
     // Scale to range 50–250. Leaflet's default is 60. Smaller numbers zoom faster.
     return Math.round(50 + normalized * 200);
-  };
+  }
+
+  // NASA GIBS Night Lights (VIIRS)
+  const nightUrl = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_CityLights_2012/default/2012-03-12/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpg';
 
   // GIBS MODIS CODE
   const [gibsOffset, setGibsOffset] = useState(0);
 
   // Night overlay darkness (0-100 → fillOpacity 0.0-1.0)
   const [nightDarkness, setNightDarkness] = useState(() => {
-    try {
-      return parseInt(localStorage.getItem("ohc_nightDarkness")) || 60;
-    } catch {
-      return 60;
-    }
+    try { return parseInt(localStorage.getItem('ohc_nightDarkness')) || 60; } catch { return 60; }
   });
 
   const getGibsUrl = (days) => {
     const date = new Date(Date.now() - (days * 24 + 12) * 60 * 60 * 1000);
-    const dateStr = date.toISOString().split("T")[0];
+    const dateStr = date.toISOString().split('T')[0];
     return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/${dateStr}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`;
   };
   // End GIBS MODIS CODE
 
   const [mapView, setMapView] = useState({
     center: storedSettings.center || [20, 0],
-    zoom: storedSettings.zoom || 2.5,
+    zoom: storedSettings.zoom || 2.5
   });
 
   // Map lock — prevents accidental panning/zooming (useful on touch devices)
   const [mapLocked, setMapLocked] = useState(() => {
-    try {
-      return localStorage.getItem("openhamclock_mapLocked") === "true";
-    } catch {
-      return false;
-    }
+    try { return localStorage.getItem('openhamclock_mapLocked') === 'true'; } catch { return false; }
   });
 
   const destinationPoint = (latDeg, lonDeg, bearingDeg, distanceDeg) => {
@@ -262,10 +294,8 @@ export const WorldMap = ({
     const θ = toRad(bearingDeg);
     const δ = toRad(distanceDeg);
 
-    const sinφ1 = Math.sin(φ1),
-      cosφ1 = Math.cos(φ1);
-    const sinδ = Math.sin(δ),
-      cosδ = Math.cos(δ);
+    const sinφ1 = Math.sin(φ1), cosφ1 = Math.cos(φ1);
+    const sinδ = Math.sin(δ), cosδ = Math.cos(δ);
 
     const sinφ2 = sinφ1 * cosδ + cosφ1 * sinδ * Math.cos(θ);
     const φ2 = Math.asin(sinφ2);
@@ -299,10 +329,11 @@ export const WorldMap = ({
 
     const y = Math.sin(Δλ) * Math.cos(φ2);
     const x =
-      Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+      Math.cos(φ1) * Math.sin(φ2) -
+      Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
 
     const θ = Math.atan2(y, x);
-    return (toDeg(θ) + 360) % 360;
+    return ((toDeg(θ) + 360) % 360);
   };
 
   useEffect(() => {
@@ -317,23 +348,180 @@ export const WorldMap = ({
     deRef.current = deLocation;
   }, [deLocation]);
 
+  const wxCacheRef = useRef(new Map()); // key -> { t, wx }
+  const WX_TTL_MS = 10 * 60 * 1000;
+
+  const getWxCached = async (lat, lon) => {
+    if (!dxWeatherAllowed) throw new Error('DX weather disabled');
+    const key = `${lat.toFixed(3)},${lon.toFixed(3)}`; // coarse cache
+    const now = Date.now();
+    const hit = wxCacheRef.current.get(key);
+    if (hit && (now - hit.t) < WX_TTL_MS) return hit.wx;
+
+    const wx = await getCallsignWeather(lat, lon);
+    wxCacheRef.current.set(key, { t: now, wx });
+    return wx;
+  };
+
+  const bindSpotInteraction = (layer, onActivate) => {
+    layer.on('click', (e) => {
+      // ✅ Prevent map.on("click") from firing (which moves DX / rebuilds layers)
+      try {
+        const L = window.L;
+        if (L?.DomEvent) L.DomEvent.stop(e);
+        else {
+          e?.originalEvent?.preventDefault?.();
+          e?.originalEvent?.stopPropagation?.();
+        }
+      } catch {}
+
+      const oe = e?.originalEvent;
+
+      const isAlt =
+        !!oe?.altKey ||
+        (typeof oe?.getModifierState === 'function' && oe.getModifierState('Alt'));
+
+      // ALT+click => action
+      if (isAlt && typeof onActivate === 'function') {
+        onActivate();
+        return;
+      }
+
+      // Normal click => popup
+      if (typeof layer.openPopup === 'function') layer.openPopup();
+    });
+  };
+
+  const attachPopupWeather = (layer, lat, lon, baseHtml, enabled = true) => {
+    const token = '__WX__';
+    const loadingHtml = baseHtml + `<div style="margin-top:6px;color:#888">Weather: loading...</div>`;
+
+    layer.bindPopup(enabled ? loadingHtml : baseHtml);
+
+    layer.on('popupopen', async (e) => {
+      const target = e?.target || layer;
+
+      if (!enabled) {
+        target.setPopupContent(baseHtml);
+        return;
+      }
+
+      target.setPopupContent(loadingHtml);
+
+      try {
+        const wx = await getWxCached(lat, lon);
+        target.setPopupContent(baseHtml + fmtWxHtml(wx, lat, lon));
+      } catch {
+        target.setPopupContent(baseHtml + `<div style="margin-top:6px;color:#888">Weather unavailable</div>`);
+      }
+    });
+  };
+
+
+  // Hover handlers for weather bubble overlay (does NOT stop click propagation)
+  const attachHoverHandlers = (layer, hoverObj) => {
+    if (!layer || !hoverObj || typeof onHoverSpot !== "function") return;
+
+    const isPopupOpen = () => {
+      try {
+        return !!(layer.getPopup && layer.getPopup() && layer.isPopupOpen && layer.isPopupOpen());
+      } catch {
+        return false;
+      }
+    };
+
+    layer.on("mouseover", () => {
+      try { onHoverSpot(hoverObj); } catch {}
+    });
+
+    layer.on("mouseout", () => {
+      try {
+        if (!isPopupOpen()) onHoverSpot(null);
+      } catch {}
+    });
+
+    layer.on("popupclose", () => {
+      try { onHoverSpot(null); } catch {}
+    });
+  };
+
+  const fmtWxHtml = (wx, lat, lon) => {
+    if (!wx?.current) return `<div style="margin-top:6px;color:#888">Weather unavailable</div>`;
+
+    const c = wx.current;
+
+    // Open-Meteo returned metric (as requested)
+    let temp = c.temperature_2m;          // °C
+    let wind = c.wind_speed_10m;          // km/h
+    const windDir = c.wind_direction_10m; // degrees
+    const humidity = c.relative_humidity_2m;
+    const pressure = c.pressure_msl;
+    const precipProb = wx?.hourly?.precipitation_probability?.[0];
+
+    if (units === 'imperial') {
+      temp = (temp * 9/5) + 32;
+      wind = wind * 0.621371; // mph
+    }
+
+    const solarEl = calculateSolarElevation(lat, lon, new Date());
+    const tw = classifyTwilight(solarEl);
+    const greyline = solarEl != null && Math.abs(solarEl) <= 6;
+
+    const windArrow = (deg) => {
+      if (deg == null || Number.isNaN(deg)) return '';
+      const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+      return dirs[Math.round(deg / 22.5) % 16];
+    };
+
+    return `
+      <div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.12)">
+        <div style="font-weight:800;margin-bottom:4px">Weather</div>
+
+        <div style="display:flex;flex-direction:column;gap:3px;font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;font-size:12px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="width:18px;text-align:center">🌡</span>
+            <span>${Math.round(temp)}°${units === 'imperial' ? 'F' : 'C'}</span>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="width:18px;text-align:center">💨</span>
+            <span>${Math.round(wind)} ${units === 'imperial' ? 'mph' : 'km/h'} ${windArrow(windDir)}</span>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="width:18px;text-align:center">💧</span>
+            <span>${humidity != null ? `${Math.round(humidity)}%` : '—'}</span>
+            <span style="width:18px;text-align:center;margin-left:6px">🧭</span>
+            <span>${pressure != null ? `${Math.round(pressure)} hPa` : '—'}</span>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="width:18px;text-align:center">🌧</span>
+            <span>${precipProb != null ? `${Math.round(precipProb)}%` : '—'}</span>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="width:18px;text-align:center">☀</span>
+            <span>${solarEl != null ? `${Math.round(solarEl)}° (${tw})` : '—'}</span>
+            ${greyline ? `<span style="margin-left:6px;color:#f5c542;font-weight:900">GREYLINE</span>` : ``}
+          </div>
+        </div>
+      </div>
+    `;
+  };
+  
   // Save map settings to localStorage when changed (merge, don't overwrite)
   useEffect(() => {
     try {
       const existing = getStoredMapSettings();
-      localStorage.setItem(
-        "openhamclock_mapSettings",
-        JSON.stringify({
-          ...existing,
-          mapStyle,
-          center: mapView.center,
-          zoom: mapView.zoom,
-          wheelPxPerZoomLevel: getScaledZoomLevel(mouseZoom),
-        }),
-      );
-    } catch (e) {
-      console.error("Failed to save map settings:", e);
-    }
+      localStorage.setItem('openhamclock_mapSettings', JSON.stringify({
+        ...existing,
+        mapStyle,
+        center: mapView.center,
+        zoom: mapView.zoom,
+        wheelPxPerZoomLevel: getScaledZoomLevel(mouseZoom)
+      }));
+    } catch (e) { console.error('Failed to save map settings:', e); }
   }, [mapStyle, mapView, mouseZoom]);
 
   // Initialize map
@@ -341,30 +529,11 @@ export const WorldMap = ({
     // If map is already initialized, don't do it again
     if (!mapRef.current || mapInstanceRef.current) return;
 
-    // Leaflet is loaded via a <script> tag in index.html (self-hosted vendor file).
-    // On slow connections or if the file 404s, window.L may not be ready yet.
-    // Poll for up to 5 seconds before giving up with an actionable error.
-    if (typeof window.L === "undefined") {
-      let attempts = 0;
-      const maxAttempts = 50; // 50 × 100ms = 5 seconds
-      const poll = setInterval(() => {
-        attempts++;
-        if (typeof window.L !== "undefined") {
-          clearInterval(poll);
-          setLeafletReady(true); // triggers a re-render → re-runs this effect with L defined
-        } else if (attempts >= maxAttempts) {
-          clearInterval(poll);
-          console.error(
-            "Leaflet failed to load after 5s. " +
-            "Check that /vendor/leaflet/leaflet.js is accessible. " +
-            "Run: bash scripts/vendor-download.sh"
-          );
-        }
-      }, 100);
-      return () => clearInterval(poll);
-    }
-
     const L = window.L;
+    if (typeof L === 'undefined') {
+      console.error('Leaflet not loaded');
+      return;
+    }
 
     const map = L.map(mapRef.current, {
       center: mapView.center,
@@ -376,45 +545,40 @@ export const WorldMap = ({
       zoomSnap: 0.1,
       zoomDelta: 0.25,
       wheelPxPerZoomLevel: getScaledZoomLevel(mouseZoom),
-      maxBounds: [
-        [-90, -Infinity],
-        [90, Infinity],
-      ],
-      maxBoundsViscosity: 0.8,
+      maxBounds: [[-90, -Infinity], [90, Infinity]],
+      maxBoundsViscosity: 0.8
     });
 
     // --- night pane ---
-    map.createPane("nightPane");
-    const nightPane = map.getPane("nightPane");
+    map.createPane('nightPane');
+    const nightPane = map.getPane('nightPane');
     nightPane.style.zIndex = 650;
-    nightPane.style.pointerEvents = "none";
-    nightPane.id = "night-lights-pane";
+    nightPane.style.pointerEvents = 'none';
+    nightPane.id = 'night-lights-pane';
 
     // Initial tile layer (Base Day Map)
     tileLayerRef.current = L.tileLayer(MAP_STYLES[mapStyle].url, {
       attribution: MAP_STYLES[mapStyle].attribution,
       noWrap: false,
-      crossOrigin: "anonymous",
+      crossOrigin: 'anonymous'
     }).addTo(map);
-
     // Day/night terminator
     terminatorRef.current = createTerminator({
       resolution: 2,
       fillOpacity: nightDarkness / 100,
-      fillColor: "#000010",
-      color: "#ffaa00",
+      fillColor: '#000010',
+      color: '#ffaa00',
       weight: 2,
-      dashArray: "5, 5",
-      wrap: false,
+      dashArray: '5, 5',
+      wrap: false
     }).addTo(map);
-
     // Refresh terminator immediately to set initial position
     setTimeout(() => {
       if (terminatorRef.current) {
         terminatorRef.current.setTime();
         const path = terminatorRef.current.getElement();
         if (path) {
-          path.classList.add("terminator-path");
+          path.classList.add('terminator-path');
         }
       }
     }, 100);
@@ -424,12 +588,12 @@ export const WorldMap = ({
         terminatorRef.current.setTime();
         const path = terminatorRef.current.getElement();
         if (path) {
-          path.classList.add("terminator-path");
+          path.classList.add('terminator-path');
         }
       }
     }, 60000);
 
-    map.on("moveend", () => {
+    map.on('moveend', () => {
       const center = map.getCenter();
       const zoom = map.getZoom();
       setMapView({ center: [center.lat, center.lng], zoom });
@@ -447,15 +611,10 @@ export const WorldMap = ({
       const oe = e?.originalEvent;
       const isShift =
         !!oe?.shiftKey ||
-        (typeof oe?.getModifierState === "function" &&
-          oe.getModifierState("Shift"));
+        (typeof oe?.getModifierState === "function" && oe.getModifierState("Shift"));
 
       // SHIFT+click => turn rotator (do NOT move DX)
-      if (
-        isShift &&
-        rotatorEnabledRef.current &&
-        typeof rotatorTurnRef.current === "function"
-      ) {
+      if (isShift && rotatorEnabledRef.current && typeof rotatorTurnRef.current === "function") {
         const de = deRef.current;
         if (de?.lat != null && de?.lon != null) {
           const az = initialBearingDeg(de.lat, de.lon, e.latlng.lat, lon);
@@ -475,18 +634,10 @@ export const WorldMap = ({
 
     // Apply initial map lock state if saved
     if (mapLocked) {
-      [
-        map.dragging,
-        map.touchZoom,
-        map.doubleClickZoom,
-        map.scrollWheelZoom,
-        map.boxZoom,
-        map.keyboard,
-      ].forEach((h) => {
-        if (h) h.disable();
-      });
+      [map.dragging, map.touchZoom, map.doubleClickZoom, map.scrollWheelZoom, map.boxZoom, map.keyboard]
+        .forEach(h => { if (h) h.disable(); });
       const zc = map.zoomControl?.getContainer();
-      if (zc) zc.style.display = "none";
+      if (zc) zc.style.display = 'none';
     }
 
     const resizeObserver = new ResizeObserver(() => {
@@ -502,13 +653,12 @@ export const WorldMap = ({
       map.remove();
       mapInstanceRef.current = null;
     };
-  }, [leafletReady]); // leafletReady flips to true once window.L is confirmed available
+  }, []); // Empty dependency array for initialization
 
   // Update the value for how many scroll pixels count as a zoom level
   useEffect(() => {
     if (!mapInstanceRef.current) return;
-    mapInstanceRef.current.options.wheelPxPerZoomLevel =
-      getScaledZoomLevel(mouseZoom);
+    mapInstanceRef.current.options.wheelPxPerZoomLevel = getScaledZoomLevel(mouseZoom);
   }, [mouseZoom]);
 
   // Apply map lock — disable all navigation interactions while keeping click-through
@@ -522,27 +672,20 @@ export const WorldMap = ({
       map.doubleClickZoom,
       map.scrollWheelZoom,
       map.boxZoom,
-      map.keyboard,
+      map.keyboard
     ];
 
-    handlers.forEach((h) => {
-      if (h) mapLocked ? h.disable() : h.enable();
-    });
+    handlers.forEach(h => { if (h) mapLocked ? h.disable() : h.enable(); });
 
     // Hide/show zoom control
     const zoomControl = map.zoomControl;
     if (zoomControl) {
       const el = zoomControl.getContainer();
-      if (el) el.style.display = mapLocked ? "none" : "";
+      if (el) el.style.display = mapLocked ? 'none' : '';
     }
 
     // Persist to localStorage
-    try {
-      localStorage.setItem(
-        "openhamclock_mapLocked",
-        mapLocked ? "true" : "false",
-      );
-    } catch {}
+    try { localStorage.setItem('openhamclock_mapLocked', mapLocked ? 'true' : 'false'); } catch { }
   }, [mapLocked]);
 
   // Update tile layer and handle night light clipping
@@ -556,56 +699,42 @@ export const WorldMap = ({
 
     // Determine the URL: Use the dynamic GIBS generator if 'MODIS' is selected
     let url = MAP_STYLES[mapStyle].url;
-    if (mapStyle === "MODIS") {
-      url = getGibsUrl(gibsOffset);
-    }
+    if (mapStyle === 'MODIS') { url = getGibsUrl(gibsOffset); }
 
     // Create fresh tile layer with correct attribution and options
     tileLayerRef.current = L.tileLayer(url, {
       attribution: MAP_STYLES[mapStyle].attribution,
       noWrap: false,
-      crossOrigin: "anonymous",
+      crossOrigin: 'anonymous',
       // NASA GIBS tiles only cover -180..180; other tile providers wrap naturally
-      ...(mapStyle === "MODIS"
-        ? {
-            bounds: [
-              [-85, -180],
-              [85, 180],
-            ],
-          }
-        : {}),
+      ...(mapStyle === 'MODIS' ? { bounds: [[-85, -180], [85, 180]] } : {})
     }).addTo(map);
-
     // 3. Terminator Shadow (Gray Line) Set Color to transparent to hide terminator vertical lines at 180° and -180°
     if (terminatorRef.current) {
       terminatorRef.current.setStyle({
         fillOpacity: nightDarkness / 100,
-        fillColor: "#000008",
-        color: "transparent",
-        weight: 2,
+        fillColor: '#000008',
+        color: 'transparent',
+        weight: 2
       });
 
-      if (typeof terminatorRef.current.bringToFront === "function") {
+      if (typeof terminatorRef.current.bringToFront === 'function') {
         terminatorRef.current.bringToFront();
       }
     }
 
     // If you have a countries overlay, ensure it stays visible
     if (countriesLayerRef.current?.length) {
-      countriesLayerRef.current.forEach((l) => {
-        try {
-          l.bringToFront();
-        } catch (e) {}
-      });
+      countriesLayerRef.current.forEach(l => { try { l.bringToFront(); } catch (e) { } });
     }
 
     // 4. Handle Clipping Mask
     const updateMask = () => {
-      const nightPane = document.getElementById("night-lights-pane");
-      const terminatorPath = document.querySelector(".terminator-path");
+      const nightPane = document.getElementById('night-lights-pane');
+      const terminatorPath = document.querySelector('.terminator-path');
 
       if (nightPane && terminatorPath) {
-        const pathData = terminatorPath.getAttribute("d");
+        const pathData = terminatorPath.getAttribute('d');
         if (pathData) {
           nightPane.style.clipPath = `path('${pathData}')`;
           nightPane.style.webkitClipPath = `path('${pathData}')`;
@@ -624,9 +753,7 @@ export const WorldMap = ({
     if (terminatorRef.current) {
       terminatorRef.current.setStyle({ fillOpacity: nightDarkness / 100 });
     }
-    try {
-      localStorage.setItem("ohc_nightDarkness", String(nightDarkness));
-    } catch {}
+    try { localStorage.setItem('ohc_nightDarkness', String(nightDarkness)); } catch { }
   }, [nightDarkness]);
 
   // End code dynamic GIBS generator if 'MODIS' is selected
@@ -637,10 +764,8 @@ export const WorldMap = ({
     const map = mapInstanceRef.current;
 
     // Remove existing countries layers (all world copies)
-    countriesLayerRef.current.forEach((layer) => {
-      try {
-        map.removeLayer(layer);
-      } catch (e) {}
+    countriesLayerRef.current.forEach(layer => {
+      try { map.removeLayer(layer); } catch (e) { }
     });
     countriesLayerRef.current = [];
 
@@ -649,38 +774,18 @@ export const WorldMap = ({
 
     // Bright distinct colors for countries (designed for maximum contrast between neighbors)
     const COLORS = [
-      "#e6194b",
-      "#3cb44b",
-      "#4363d8",
-      "#f58231",
-      "#911eb4",
-      "#42d4f4",
-      "#f032e6",
-      "#bfef45",
-      "#fabed4",
-      "#469990",
-      "#dcbeff",
-      "#9A6324",
-      "#800000",
-      "#aaffc3",
-      "#808000",
-      "#000075",
-      "#e6beff",
-      "#ff6961",
-      "#77dd77",
-      "#fdfd96",
-      "#84b6f4",
-      "#fdcae1",
-      "#c1e1c1",
-      "#b39eb5",
-      "#ffb347",
+      '#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4',
+      '#42d4f4', '#f032e6', '#bfef45', '#fabed4', '#469990',
+      '#dcbeff', '#9A6324', '#800000', '#aaffc3', '#808000',
+      '#000075', '#e6beff', '#ff6961', '#77dd77', '#fdfd96',
+      '#84b6f4', '#fdcae1', '#c1e1c1', '#b39eb5', '#ffb347'
     ];
 
     // Simple string hash for consistent color assignment
     const hashColor = (str) => {
       let hash = 0;
       for (let i = 0; i < str.length; i++) {
-        hash = (hash << 5) - hash + str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
         hash |= 0;
       }
       return COLORS[Math.abs(hash) % COLORS.length];
@@ -688,46 +793,44 @@ export const WorldMap = ({
 
     // Deep-shift all coordinates in a GeoJSON geometry by a longitude offset
     const shiftCoords = (coords, offset) => {
-      if (typeof coords[0] === "number") {
+      if (typeof coords[0] === 'number') {
         // [lon, lat] point
         return [coords[0] + offset, coords[1]];
       }
-      return coords.map((c) => shiftCoords(c, offset));
+      return coords.map(c => shiftCoords(c, offset));
     };
 
     const shiftGeoJSON = (geojson, offset) => {
       if (offset === 0) return geojson;
       return {
         ...geojson,
-        features: geojson.features.map((f) => ({
+        features: geojson.features.map(f => ({
           ...f,
           geometry: {
             ...f.geometry,
-            coordinates: shiftCoords(f.geometry.coordinates, offset),
-          },
-        })),
+            coordinates: shiftCoords(f.geometry.coordinates, offset)
+          }
+        }))
       };
     };
 
     // Fetch world countries GeoJSON (Natural Earth 110m simplified, ~240KB)
-    fetch(
-      "https://cdn.jsdelivr.net/gh/johan/world.geo.json@master/countries.geo.json",
-    )
-      .then((res) => {
+    fetch('https://cdn.jsdelivr.net/gh/johan/world.geo.json@master/countries.geo.json')
+      .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
-      .then((geojson) => {
+      .then(geojson => {
         if (!mapInstanceRef.current) return;
 
         const styleFunc = (feature) => {
-          const name = feature.properties?.name || feature.id || "Unknown";
+          const name = feature.properties?.name || feature.id || 'Unknown';
           return {
             fillColor: hashColor(name),
             fillOpacity: 0.65,
-            color: "#fff",
+            color: '#fff',
             weight: 1,
-            opacity: 0.8,
+            opacity: 0.8
           };
         };
 
@@ -737,32 +840,28 @@ export const WorldMap = ({
           const layer = L.geoJSON(shifted, {
             style: styleFunc,
             // Only add tooltips to center copy to avoid duplicates
-            onEachFeature:
-              offset === 0
-                ? (feature, layer) => {
-                    const name = feature.properties?.name || "Unknown";
-                    layer.bindTooltip(name, {
-                      sticky: true,
-                      className: "country-tooltip",
-                      direction: "top",
-                      offset: [0, -5],
-                    });
-                  }
-                : undefined,
+            onEachFeature: offset === 0 ? (feature, layer) => {
+              const name = feature.properties?.name || 'Unknown';
+              layer.bindTooltip(name, {
+                sticky: true,
+                className: 'country-tooltip',
+                direction: 'top',
+                offset: [0, -5]
+              });
+            } : undefined
           }).addTo(map);
-
           countriesLayerRef.current.push(layer);
         }
 
         // Ensure countries layers are below markers but above tiles
-        countriesLayerRef.current.forEach((l) => l.bringToBack());
+        countriesLayerRef.current.forEach(l => l.bringToBack());
         // Put tile layer behind countries
         if (tileLayerRef.current) tileLayerRef.current.bringToBack();
         // Terminator on top
         if (terminatorRef.current) terminatorRef.current.bringToFront();
       })
-      .catch((err) => {
-        console.warn("Could not load countries GeoJSON:", err);
+      .catch(err => {
+        console.warn('Could not load countries GeoJSON:', err);
       });
 
     return () => {
@@ -775,7 +874,7 @@ export const WorldMap = ({
           map.removeLayer(rotatorGlowRef.current);
           rotatorGlowRef.current = null;
         }
-      } catch {}
+      } catch { }
     };
   }, [mapStyle]);
 
@@ -785,23 +884,21 @@ export const WorldMap = ({
     const map = mapInstanceRef.current;
 
     // Remove old markers
-    deMarkerRef.current.forEach((m) => map.removeLayer(m));
+    deMarkerRef.current.forEach(m => map.removeLayer(m));
     deMarkerRef.current = [];
-    dxMarkerRef.current.forEach((m) => map.removeLayer(m));
+    dxMarkerRef.current.forEach(m => map.removeLayer(m));
     dxMarkerRef.current = [];
 
     // DE Marker — replicate across world copies
     replicatePoint(deLocation.lat, deLocation.lon).forEach(([lat, lon]) => {
       const deIcon = L.divIcon({
-        className: "custom-marker de-marker",
-        html: "DE",
+        className: 'custom-marker de-marker',
+        html: 'DE',
         iconSize: [32, 32],
-        iconAnchor: [16, 16],
+        iconAnchor: [16, 16]
       });
       const m = L.marker([lat, lon], { icon: deIcon })
-        .bindPopup(
-          `<b>DE - Your Location</b><br>${calculateGridSquare(deLocation.lat, deLocation.lon)}<br>${deLocation.lat.toFixed(4)}°, ${deLocation.lon.toFixed(4)}°`,
-        )
+        .bindPopup(`<b>DE - Your Location</b><br>${calculateGridSquare(deLocation.lat, deLocation.lon)}<br>${deLocation.lat.toFixed(4)}°, ${deLocation.lon.toFixed(4)}°`)
         .addTo(map);
       deMarkerRef.current.push(m);
     });
@@ -809,20 +906,57 @@ export const WorldMap = ({
     // DX Marker — replicate across world copies
     replicatePoint(dxLocation.lat, dxLocation.lon).forEach(([lat, lon]) => {
       const dxIcon = L.divIcon({
-        className: "custom-marker dx-marker",
-        html: "DX",
+        className: 'custom-marker dx-marker',
+        html: 'DX',
         iconSize: [32, 32],
-        iconAnchor: [16, 16],
+        iconAnchor: [16, 16]
       });
+
+      // IMPORTANT: baseHtml uses the marker's coords (lat/lon for this world copy),
+      // and the "true" dxLocation coords for grid display is OK, but for weather we
+      // should use the marker's actual coords so it always matches what was clicked.
+      const baseHtml =
+        `<b>DX - Target</b><br>` +
+        `${calculateGridSquare(dxLocation.lat, dxLocation.lon)}<br>` +
+        `${dxLocation.lat.toFixed(4)}°, ${dxLocation.lon.toFixed(4)}°`;
+
+      const loadingHtml =
+        baseHtml + `<div style="margin-top:6px;color:#888">Weather: loading...</div>`;
+
       const m = L.marker([lat, lon], { icon: dxIcon })
-        .bindPopup(
-          `<b>DX - Target</b><br>${calculateGridSquare(dxLocation.lat, dxLocation.lon)}<br>${dxLocation.lat.toFixed(4)}°, ${dxLocation.lon.toFixed(4)}°`,
-        )
+        .bindPopup(loadingHtml)
         .addTo(map);
+
+      m.on('popupopen', async (e) => {
+        const marker = e?.target || m;
+
+        // Popup weather respects the DX Weather toggle
+
+        // Always show loading immediately
+        marker.setPopupContent(loadingHtml);
+
+        // Use the marker’s actual position (prevents stale dxLocation closures)
+        const ll = marker.getLatLng();
+        const wxLat = ll?.lat;
+        const wxLon = ll?.lng;
+
+        try {
+          console.log('[WX] fetching', wxLat, wxLon);
+          if (!dxWeatherAllowed) throw new Error('DX weather disabled');
+          const wx = await getWxCached(wxLat, wxLon);
+          console.log('[WX] got', wx);
+
+          marker.setPopupContent(baseHtml + fmtWxHtml(wx, wxLat, wxLon));
+        } catch (err) {
+          console.warn('[WX] failed', err);
+          marker.setPopupContent(baseHtml + `<div style="margin-top:6px;color:#888">Weather unavailable</div>`);
+        }
+      });
+
       dxMarkerRef.current.push(m);
     });
-  }, [deLocation, dxLocation]);
 
+    }, [deLocation, dxLocation, units]);
   // Update sun/moon markers every 60 seconds (matches terminator refresh)
   useEffect(() => {
     if (!mapInstanceRef.current) return;
@@ -837,33 +971,25 @@ export const WorldMap = ({
       // Sun marker
       const sunPos = getSunPosition(now);
       const sunIcon = L.divIcon({
-        className: "custom-marker sun-marker",
-        html: "☼",
+        className: 'custom-marker sun-marker',
+        html: '☼',
         iconSize: [24, 24],
-        iconAnchor: [12, 12],
+        iconAnchor: [12, 12]
       });
-      sunMarkerRef.current = L.marker([sunPos.lat, sunPos.lon], {
-        icon: sunIcon,
-      })
-        .bindPopup(
-          `<b>☼ Subsolar Point</b><br>${sunPos.lat.toFixed(2)}°, ${sunPos.lon.toFixed(2)}°`,
-        )
+      sunMarkerRef.current = L.marker([sunPos.lat, sunPos.lon], { icon: sunIcon })
+        .bindPopup(`<b>☼ Subsolar Point</b><br>${sunPos.lat.toFixed(2)}°, ${sunPos.lon.toFixed(2)}°`)
         .addTo(map);
 
       // Moon marker
       const moonPos = getMoonPosition(now);
       const moonIcon = L.divIcon({
-        className: "custom-marker moon-marker",
-        html: "☽",
+        className: 'custom-marker moon-marker',
+        html: '☽',
         iconSize: [24, 24],
-        iconAnchor: [12, 12],
+        iconAnchor: [12, 12]
       });
-      moonMarkerRef.current = L.marker([moonPos.lat, moonPos.lon], {
-        icon: moonIcon,
-      })
-        .bindPopup(
-          `<b>☽ Sublunar Point</b><br>${moonPos.lat.toFixed(2)}°, ${moonPos.lon.toFixed(2)}°`,
-        )
+      moonMarkerRef.current = L.marker([moonPos.lat, moonPos.lon], { icon: moonIcon })
+        .bindPopup(`<b>☽ Sublunar Point</b><br>${moonPos.lat.toFixed(2)}°, ${moonPos.lon.toFixed(2)}°`)
         .addTo(map);
     };
 
@@ -879,155 +1005,195 @@ export const WorldMap = ({
     };
   }, []);
 
-  // Update DX paths
-  useEffect(() => {
-    if (!mapInstanceRef.current) return;
-    const map = mapInstanceRef.current;
+// Update DX paths
+useEffect(() => {
+  if (!mapInstanceRef.current) return;
+  const map = mapInstanceRef.current;
+  if (typeof L === "undefined") return;
 
-    // Remove old DX paths
-    dxPathsLinesRef.current.forEach((l) => map.removeLayer(l));
-    dxPathsLinesRef.current = [];
-    dxPathsMarkersRef.current.forEach((m) => map.removeLayer(m));
-    dxPathsMarkersRef.current = [];
+  // Remove old DX paths/markers
+  dxPathsLinesRef.current.forEach((l) => map.removeLayer(l));
+  dxPathsLinesRef.current = [];
+  dxPathsMarkersRef.current.forEach((m) => map.removeLayer(m));
+  dxPathsMarkersRef.current = [];
 
-    // Add new DX paths if enabled
-    if (showDXPaths && dxPaths && dxPaths.length > 0) {
-      const filteredPaths = filterDXPaths(dxPaths, dxFilters);
+  // Clear highlight index/state
+  dxLineIndexRef.current = new Map();
+  dxHighlightKeyRef.current = "";
 
-      filteredPaths.forEach((path) => {
-        try {
-          if (
-            !path.spotterLat ||
-            !path.spotterLon ||
-            !path.dxLat ||
-            !path.dxLon
-          )
-            return;
-          if (
-            isNaN(path.spotterLat) ||
-            isNaN(path.spotterLon) ||
-            isNaN(path.dxLat) ||
-            isNaN(path.dxLon)
-          )
-            return;
+  if (!showDXPaths || !Array.isArray(dxPaths) || dxPaths.length === 0) return;
 
-          const pathPoints = getGreatCirclePoints(
-            path.spotterLat,
-            path.spotterLon,
-            path.dxLat,
-            path.dxLon,
-          );
+  const filteredPaths = filterDXPaths(dxPaths, dxFilters);
 
-          if (
-            !pathPoints ||
-            !Array.isArray(pathPoints) ||
-            pathPoints.length === 0
-          )
-            return;
+  filteredPaths.forEach((path) => {
+    try {
+      if (
+        path?.spotterLat == null ||
+        path?.spotterLon == null ||
+        path?.dxLat == null ||
+        path?.dxLon == null
+      )
+        return;
 
-          const freq = parseFloat(path.freq);
-          const color = getBandColor(freq);
+      if (
+        isNaN(path.spotterLat) ||
+        isNaN(path.spotterLon) ||
+        isNaN(path.dxLat) ||
+        isNaN(path.dxLon)
+      )
+        return;
 
-          const isHovered =
-            hoveredSpot &&
-            hoveredSpot.call?.toUpperCase() === path.dxCall?.toUpperCase();
+      const dxCallKey = normalizeCallsignKey(
+        path.dxCall || path.dxCallsign || path.dxCallSign || path.call || path.dx || "",
+      );
+      if (!dxCallKey) return;
 
-          // Render polyline on all 3 world copies so it's visible across the dateline
-          replicatePath(pathPoints).forEach((copy) => {
-            const line = L.polyline(copy, {
-              color: isHovered ? "#ffffff" : color,
-              weight: isHovered ? 4 : 1.5,
-              opacity: isHovered ? 1 : 0.5,
-            }).addTo(map);
-            if (isHovered) line.bringToFront();
-            dxPathsLinesRef.current.push(line);
-          });
+      const pathPoints = getGreatCirclePoints(
+        path.spotterLat,
+        path.spotterLon,
+        path.dxLat,
+        path.dxLon,
+      );
+      if (!Array.isArray(pathPoints) || pathPoints.length === 0) return;
 
-          // Render circleMarker on all 3 world copies
-          replicatePoint(path.dxLat, path.dxLon).forEach(([lat, lon]) => {
-            const dxCircle = L.circleMarker([lat, lon], {
-              radius: isHovered ? 12 : 6,
-              fillColor: isHovered ? "#ffffff" : color,
-              color: isHovered ? color : "#fff",
-              weight: isHovered ? 3 : 1.5,
-              opacity: 1,
-              fillOpacity: isHovered ? 1 : 0.9,
-              interactive: !!onSpotClick,
-            })
-              .bindPopup(
-                `<b data-qrz-call="${esc(path.dxCall)}" style="color: ${color}; cursor:pointer">${esc(path.dxCall)}</b><br>${esc(path.freq)} MHz<br>by <span data-qrz-call="${esc(path.spotter)}" style="cursor:pointer">${esc(path.spotter)}</span>`,
-              )
-              .addTo(map);
+      const freqNum = parseFloat(path.freq);
+      const color = getBandColor(freqNum);
 
-            if (onSpotClick) {
-              dxCircle.on("click", () => onSpotClick(path));
-            }
+      const hoverObj = {
+        dxCall: dxCallKey,
+        call: dxCallKey,
+        dxLat: path.dxLat,
+        dxLon: path.dxLon,
+        lat: path.dxLat,
+        lon: path.dxLon,
+        freq: path.freq,
+        spotter: path.spotter,
+        spotterLat: path.spotterLat,
+        spotterLon: path.spotterLon,
+      };
 
-            if (isHovered) dxCircle.bringToFront();
-            dxPathsMarkersRef.current.push(dxCircle);
-          });
+      // Polyline: render on all 3 world copies and index by callsign for highlight
+      replicatePath(pathPoints).forEach((copy) => {
+        const line = L.polyline(copy, {
+          color,
+          weight: 1.5,
+          opacity: 0.5,
+        }).addTo(map);
+        line._ohcBaseStyle = { color, weight: 1.5, opacity: 0.5 };
 
-          // Add label if enabled — replicate across world copies
-          if (showDXLabels || isHovered) {
-            const labelIcon = L.divIcon({
-              className: "",
-              html: `<span style="display:inline-block;background:${isHovered ? "#fff" : color};color:${isHovered ? color : "#000"};padding:${isHovered ? "3px 6px" : "2px 5px"};border-radius:3px;font-family:'JetBrains Mono',monospace;font-size:${isHovered ? "12px" : "11px"};font-weight:700;white-space:nowrap;border:1px solid ${isHovered ? color : "rgba(0,0,0,0.5)"};box-shadow:0 1px ${isHovered ? "4px" : "2px"} rgba(0,0,0,${isHovered ? "0.5" : "0.3"});line-height:1.1;">${path.dxCall}</span>`,
-              iconSize: null,
-              iconAnchor: [0, 0],
-            });
-            replicatePoint(path.dxLat, path.dxLon).forEach(([lat, lon]) => {
-              const label = L.marker([lat, lon], {
-                icon: labelIcon,
-                interactive: !!onSpotClick,
-                zIndexOffset: isHovered ? 10000 : 0,
-              }).addTo(map);
+        const arr = dxLineIndexRef.current.get(dxCallKey) || [];
+        arr.push(line);
+        dxLineIndexRef.current.set(dxCallKey, arr);
 
-              if (onSpotClick) {
-                label.on("click", () => onSpotClick(path));
-              }
-
-              dxPathsMarkersRef.current.push(label);
-            });
-          }
-        } catch (err) {
-          console.error("Error rendering DX path:", err);
-        }
+        dxPathsLinesRef.current.push(line);
       });
+
+      // Popup HTML once per PATH (weather injected by attachPopupWeather)
+      const baseHtml =
+        `<b data-qrz-call="${esc(dxCallKey)}" style="color:${color};cursor:pointer">${esc(dxCallKey)}</b><br>` +
+        `${esc(path.freq)} MHz<br>` +
+        `by <span data-qrz-call="${esc(path.spotter)}" style="cursor:pointer">${esc(path.spotter)}</span>`;
+
+      // DX dot marker (replicated)
+      replicatePoint(path.dxLat, path.dxLon).forEach(([lat, lon]) => {
+        const dxCircle = L.circleMarker([lat, lon], {
+          radius: 6,
+          fillColor: color,
+          color: "#fff",
+          weight: 1.5,
+          opacity: 1,
+          fillOpacity: 0.9,
+          interactive: true,
+          bubblingMouseEvents: false,
+        }).addTo(map);
+        attachHoverHandlers(dxCircle, hoverObj);
+        attachPopupWeather(dxCircle, lat, lon, baseHtml, dxWeatherAllowed);
+        bindSpotInteraction(dxCircle, () => onSpotClick?.(path));
+
+        // Click-highlight: lock while popup open
+        dxCircle.on("popupopen", () => {
+          dxHighlightLockedRef.current = true;
+          setDXHighlight(dxCallKey);
+        });
+        dxCircle.on("popupclose", () => {
+          dxHighlightLockedRef.current = false;
+          clearDXHighlight();
+        });
+
+        dxPathsMarkersRef.current.push(dxCircle);
+      });
+
+      // DX label marker (replicated)
+      if (showDXLabels) {
+        const labelBg = color;
+        const labelFg = "#000";
+        const labelBorder = "rgba(0,0,0,0.55)";
+
+        const labelIcon = L.divIcon({
+          className: "ohc-dx-label-icon",
+          html: `
+            <span style="
+              display:inline-block;
+              background:${labelBg};
+              color:${labelFg};
+              padding:4px 8px;
+              border-radius:4px;
+              font-family:'JetBrains Mono',monospace;
+              font-size:12px;
+              font-weight:900;
+              white-space:nowrap;
+              border:2px solid ${labelBorder};
+              box-shadow:0 2px 4px rgba(0,0,0,0.4);
+              text-shadow: 0 1px 1px rgba(0,0,0,0.35);
+            ">${esc(dxCallKey)}</span>
+          `,
+          iconSize: [0, 0],
+          iconAnchor: [0, 0],
+        });
+
+        replicatePoint(path.dxLat, path.dxLon).forEach(([lat, lon]) => {
+          const label = L.marker([lat, lon], {
+            icon: labelIcon,
+            interactive: true,
+            bubblingMouseEvents: false,
+            zIndexOffset: 0,
+          }).addTo(map);
+          attachHoverHandlers(label, hoverObj);
+          attachPopupWeather(label, lat, lon, baseHtml, dxWeatherAllowed);
+          bindSpotInteraction(label, () => onSpotClick?.(path));
+
+          label.on("popupopen", () => {
+            dxHighlightLockedRef.current = true;
+            setDXHighlight(dxCallKey);
+          });
+          label.on("popupclose", () => {
+            dxHighlightLockedRef.current = false;
+            clearDXHighlight();
+          });
+
+          dxPathsMarkersRef.current.push(label);
+        });
+      }
+    } catch (err) {
+      console.error("Error rendering DX path:", err);
     }
-  }, [
-    dxPaths,
-    dxFilters,
-    showDXPaths,
-    showDXLabels,
-    hoveredSpot,
-    bandColorVersion,
-  ]);
+  });
+}, [dxPaths, dxFilters, showDXPaths, showDXLabels]);
 
   useEffect(() => {
     const map = mapInstanceRef.current;
-    if (!map || typeof L === "undefined") return;
+    if (!map || typeof L === 'undefined') return;
 
     const lat = deLocation?.lat;
     const lon = deLocation?.lon;
 
     const aRaw = rotatorAzimuth ?? rotatorLastGoodAzimuth;
-    const az = Number.isFinite(aRaw) ? ((aRaw % 360) + 360) % 360 : null;
+    const az = Number.isFinite(aRaw) ? (((aRaw % 360) + 360) % 360) : null;
 
     // If disabled or no DE/azimuth, remove layer if it exists
-    if (
-      !showRotatorBearing ||
-      !Number.isFinite(lat) ||
-      !Number.isFinite(lon) ||
-      az == null
-    ) {
-      if (rotatorLineRef.current) {
-        map.removeLayer(rotatorLineRef.current);
-        rotatorLineRef.current = null;
-      }
-      if (rotatorGlowRef.current) {
-        map.removeLayer(rotatorGlowRef.current);
-        rotatorGlowRef.current = null;
-      }
+    if (!showRotatorBearing || !Number.isFinite(lat) || !Number.isFinite(lon) || az == null) {
+      if (rotatorLineRef.current) { map.removeLayer(rotatorLineRef.current); rotatorLineRef.current = null; }
+      if (rotatorGlowRef.current) { map.removeLayer(rotatorGlowRef.current); rotatorGlowRef.current = null; }
       return;
     }
 
@@ -1037,11 +1203,11 @@ export const WorldMap = ({
     // Create if missing
     if (!rotatorGlowRef.current) {
       rotatorGlowRef.current = L.polyline(points, {
-        color: "rgba(0,255,255,0.20)",
+        color: 'rgba(0,255,255,0.20)',
         weight: 8,
         opacity: 1,
-        dashArray: "10 10",
-        className: "ohc-rotator-bearing-glow",
+        dashArray: '10 10',
+        className: 'ohc-rotator-bearing-glow',
         interactive: false,
       }).addTo(map);
     } else {
@@ -1050,11 +1216,11 @@ export const WorldMap = ({
 
     if (!rotatorLineRef.current) {
       rotatorLineRef.current = L.polyline(points, {
-        color: "rgba(0,255,255,0.78)",
+        color: 'rgba(0,255,255,0.78)',
         weight: 2.4,
         opacity: rotatorIsStale ? 0.55 : 1,
-        dashArray: "10 10",
-        className: "ohc-rotator-bearing",
+        dashArray: '10 10',
+        className: 'ohc-rotator-bearing',
         interactive: false,
       }).addTo(map);
     } else {
@@ -1067,7 +1233,7 @@ export const WorldMap = ({
     deLocation?.lon,
     rotatorAzimuth,
     rotatorLastGoodAzimuth,
-    rotatorIsStale,
+    rotatorIsStale
   ]);
 
   const unwrapLonPath = (latlngs) => {
@@ -1096,29 +1262,34 @@ export const WorldMap = ({
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
 
-    potaMarkersRef.current.forEach((m) => map.removeLayer(m));
+    potaMarkersRef.current.forEach(m => map.removeLayer(m));
     potaMarkersRef.current = [];
 
     if (showPOTA && potaSpots) {
-      potaSpots.forEach((spot) => {
+      potaSpots.forEach(spot => {
         if (spot.lat && spot.lon) {
           // Green triangle marker for POTA activators — replicate across world copies
           replicatePoint(spot.lat, spot.lon).forEach(([lat, lon]) => {
             const triangleIcon = L.divIcon({
-              className: "",
+              className: '',
               html: `<span style="display:inline-block;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:14px solid #44cc44;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));"></span>`,
               iconSize: [14, 14],
-              iconAnchor: [7, 14],
+              iconAnchor: [7, 14]
             });
-            const marker = L.marker([lat, lon], { icon: triangleIcon })
-              .bindPopup(
-                `<b data-qrz-call="${esc(spot.call)}" style="color:#44cc44; cursor:pointer">${esc(spot.call)}</b><br><span style="color:#888">${esc(spot.ref)}</span> ${esc(spot.locationDesc || "")}<br>${spot.name ? `<i>${esc(spot.name)}</i><br>` : ""}${esc(spot.freq)} ${esc(spot.mode || "")} <span style="color:#888">${esc(spot.time || "")}</span>`,
-              )
-              .addTo(map);
 
-            if (onSpotClick) {
-              marker.on("click", () => onSpotClick(spot));
+            const baseHtml =
+              `<b data-qrz-call="${esc(spot.call)}" style="color:#44cc44;cursor:pointer">${esc(spot.call)}</b><br>` +
+              `<span style="color:#888">${esc(spot.ref)}</span> ${esc(spot.locationDesc || '')}<br>` +
+              `${spot.name ? `<i>${esc(spot.name)}</i><br>` : ''}` +
+              `${esc(spot.freq)} ${esc(spot.mode || '')} <span style="color:#888">${esc(spot.time || '')}</span>`;
+
+            const marker = L.marker([lat, lon], { icon: triangleIcon }).addTo(map);
+            if (onHoverSpot) {
+              marker.on('mouseover', () => onHoverSpot(spot));
+              marker.on('mouseout', () => onHoverSpot(null));
             }
+            attachPopupWeather(marker, spot.lat, spot.lon, baseHtml, dxWeatherAllowed);
+            bindSpotInteraction(marker, () => onSpotClick?.(spot));
 
             potaMarkersRef.current.push(marker);
           });
@@ -1126,16 +1297,13 @@ export const WorldMap = ({
           // Only show callsign label when labels are enabled — replicate
           if (showPOTALabels) {
             const labelIcon = L.divIcon({
-              className: "",
-              html: `<span style="display:inline-block;background:#44cc44;color:#000;padding:2px 5px;border-radius:3px;font-size:11px;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;border:1px solid rgba(0,0,0,0.5);box-shadow:0 1px 2px rgba(0,0,0,0.3);line-height:1.1;">${spot.call}</span>`,
+              className: '',
+              html: `<span style="display:inline-block;background:#44cc44;color:#000;padding:4px 8px;border-radius:4px;font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;border:2px solid rgba(0,0,0,0.5);box-shadow:0 2px 4px rgba(0,0,0,0.4);">${spot.call}</span>`,
               iconSize: null,
-              iconAnchor: [0, -2],
+              iconAnchor: [0, -2]
             });
             replicatePoint(spot.lat, spot.lon).forEach(([lat, lon]) => {
-              const label = L.marker([lat, lon], {
-                icon: labelIcon,
-                interactive: false,
-              }).addTo(map);
+              const label = L.marker([lat, lon], { icon: labelIcon, interactive: false }).addTo(map);
               potaMarkersRef.current.push(label);
             });
           }
@@ -1149,29 +1317,33 @@ export const WorldMap = ({
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
 
-    wwffMarkersRef.current.forEach((m) => map.removeLayer(m));
+    wwffMarkersRef.current.forEach(m => map.removeLayer(m));
     wwffMarkersRef.current = [];
 
     if (showWWFF && wwffSpots) {
-      wwffSpots.forEach((spot) => {
+      wwffSpots.forEach(spot => {
         if (spot.lat && spot.lon) {
           // Light green inverted triangle for WWFF activators — replicate across world copies
           replicatePoint(spot.lat, spot.lon).forEach(([lat, lon]) => {
             const triangleIcon = L.divIcon({
-              className: "",
+              className: '',
               html: `<span style="display:inline-block;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:14px solid #a3f3a3;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));"></span>`,
               iconSize: [14, 14],
-              iconAnchor: [7, 0],
+              iconAnchor: [7, 0]
             });
-            const marker = L.marker([lat, lon], { icon: triangleIcon })
-              .bindPopup(
-                `<b data-qrz-call="${esc(spot.call)}" style="color:#a3f3a3; cursor:pointer">${esc(spot.call)}</b><br><span style="color:#888">${esc(spot.ref)}</span> ${esc(spot.locationDesc || "")}<br>${spot.name ? `<i>${esc(spot.name)}</i><br>` : ""}${esc(spot.freq)} ${esc(spot.mode || "")} <span style="color:#888">${esc(spot.time || "")}</span>`,
-              )
-              .addTo(map);
+            const baseHtml =
+            `<b data-qrz-call="${esc(spot.call)}" style="color:#a3f3a3;cursor:pointer">${esc(spot.call)}</b><br>` +
+            `<span style="color:#888">${esc(spot.ref)}</span> ${esc(spot.locationDesc || '')}<br>` +
+            `${spot.name ? `<i>${esc(spot.name)}</i><br>` : ''}` +
+            `${esc(spot.freq)} ${esc(spot.mode || '')} <span style="color:#888">${esc(spot.time || '')}</span>`;
 
-            if (onSpotClick) {
-              marker.on("click", () => onSpotClick(spot));
-            }
+            const marker = L.marker([lat, lon], { icon: triangleIcon }).addTo(map);
+            if (onHoverSpot) {
+              marker.on('mouseover', () => onHoverSpot(spot));
+              marker.on('mouseout', () => onHoverSpot(null));
+            }  
+            attachPopupWeather(marker, spot.lat, spot.lon, baseHtml, dxWeatherAllowed);  
+            bindSpotInteraction(marker, () => onSpotClick?.(spot)); 
 
             wwffMarkersRef.current.push(marker);
           });
@@ -1179,16 +1351,13 @@ export const WorldMap = ({
           // Only show callsign label when labels are enabled — replicate
           if (showWWFFLabels) {
             const labelIcon = L.divIcon({
-              className: "",
-              html: `<span style="display:inline-block;background:#a3f3a3;color:#000;padding:2px 5px;border-radius:3px;font-size:11px;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;border:1px solid rgba(0,0,0,0.5);box-shadow:0 1px 2px rgba(0,0,0,0.3);line-height:1.1;">${esc(spot.call)}</span>`,
+              className: '',
+              html: `<span style="display:inline-block;background:#a3f3a3;color:#000;padding:4px 8px;border-radius:4px;font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;border:2px solid rgba(0,0,0,0.5);box-shadow:0 2px 4px rgba(0,0,0,0.4);">${esc(spot.call)}</span>`,
               iconSize: null,
-              iconAnchor: [0, -2],
+              iconAnchor: [0, -2]
             });
             replicatePoint(spot.lat, spot.lon).forEach(([lat, lon]) => {
-              const label = L.marker([lat, lon], {
-                icon: labelIcon,
-                interactive: false,
-              }).addTo(map);
+              const label = L.marker([lat, lon], { icon: labelIcon, interactive: false }).addTo(map);
               wwffMarkersRef.current.push(label);
             });
           }
@@ -1202,53 +1371,55 @@ export const WorldMap = ({
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
 
-    sotaMarkersRef.current.forEach((m) => map.removeLayer(m));
+    sotaMarkersRef.current.forEach(m => map.removeLayer(m));
     sotaMarkersRef.current = [];
 
     if (showSOTA && sotaSpots) {
-      sotaSpots.forEach((spot) => {
+      sotaSpots.forEach(spot => {
         if (spot.lat && spot.lon) {
           // Orange diamond marker for SOTA activators — replicate across world copies
           replicatePoint(spot.lat, spot.lon).forEach(([lat, lon]) => {
             const diamondIcon = L.divIcon({
-              className: "",
+              className: '',
               html: `<span style="display:inline-block;width:12px;height:12px;background:#ff9632;transform:rotate(45deg);border:1px solid rgba(0,0,0,0.4);filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));"></span>`,
               iconSize: [12, 12],
-              iconAnchor: [6, 6],
+              iconAnchor: [6, 6]
             });
-            const marker = L.marker([lat, lon], { icon: diamondIcon })
-              .bindPopup(
-                `<b data-qrz-call="${esc(spot.call)}" style="color:#ff9632; cursor:pointer">${esc(spot.call)}</b><br><span style="color:#888">${esc(spot.ref)}</span>${spot.summit ? ` — ${esc(spot.summit)}` : ""}${spot.points ? ` <span style="color:#ff9632">(${esc(spot.points)}pt)</span>` : ""}<br>${esc(spot.freq)} ${esc(spot.mode || "")} <span style="color:#888">${esc(spot.time || "")}</span>`,
-              )
-              .addTo(map);
 
-            if (onSpotClick) {
-              marker.on("click", () => onSpotClick(spot));
+            const baseHtml =
+              `<b data-qrz-call="${esc(spot.call)}" style="color:#ff9632;cursor:pointer">${esc(spot.call)}</b><br>` +
+              `<span style="color:#888">${esc(spot.ref)}</span> ${esc(spot.locationDesc || '')}<br>` +
+              `${spot.name ? `<i>${esc(spot.name)}</i><br>` : ''}` +
+              `${esc(spot.freq)} ${esc(spot.mode || '')} <span style="color:#888">${esc(spot.time || '')}</span>`;
+
+            const marker = L.marker([lat, lon], { icon: diamondIcon }).addTo(map);
+            if (onHoverSpot) {
+              marker.on('mouseover', () => onHoverSpot(spot));
+              marker.on('mouseout', () => onHoverSpot(null));
             }
+            attachPopupWeather(marker, spot.lat, spot.lon, baseHtml, dxWeatherAllowed);  
+            bindSpotInteraction(marker, () => onSpotClick?.(spot)); 
 
             sotaMarkersRef.current.push(marker);
           });
 
           // Only show callsign label when labels are enabled — replicate
-          if (showSOTALabels) {
+          if (showDXLabels) {
             const labelIcon = L.divIcon({
-              className: "",
-              html: `<span style="display:inline-block;background:#ff9632;color:#000;padding:2px 5px;border-radius:3px;font-size:11px;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;border:1px solid rgba(0,0,0,0.5);box-shadow:0 1px 2px rgba(0,0,0,0.3);line-height:1.1;">${spot.call}</span>`,
+              className: '',
+              html: `<span style="display:inline-block;background:#ff9632;color:#000;padding:4px 8px;border-radius:4px;font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700;white-space:nowrap;border:2px solid rgba(0,0,0,0.5);box-shadow:0 2px 4px rgba(0,0,0,0.4);">${spot.call}</span>`,
               iconSize: null,
-              iconAnchor: [0, -2],
+              iconAnchor: [0, -2]
             });
             replicatePoint(spot.lat, spot.lon).forEach(([lat, lon]) => {
-              const label = L.marker([lat, lon], {
-                icon: labelIcon,
-                interactive: false,
-              }).addTo(map);
+              const label = L.marker([lat, lon], { icon: labelIcon, interactive: false }).addTo(map);
               sotaMarkersRef.current.push(label);
             });
           }
         }
       });
     }
-  }, [sotaSpots, showSOTA, showSOTALabels]);
+  }, [sotaSpots, showSOTA, showDXLabels]);
 
   // Plugin layer system - properly load saved states
   useEffect(() => {
@@ -1261,68 +1432,47 @@ export const WorldMap = ({
 
       // Build initial states from localStorage
       const initialStates = {};
-      availableLayers.forEach((layerDef) => {
+      availableLayers.forEach(layerDef => {
         // Use saved state if it exists, otherwise use defaults
         if (savedLayers[layerDef.id]) {
           initialStates[layerDef.id] = savedLayers[layerDef.id];
         } else {
           initialStates[layerDef.id] = {
             enabled: layerDef.defaultEnabled,
-            opacity: layerDef.defaultOpacity,
+            opacity: layerDef.defaultOpacity
           };
         }
       });
 
       // Initialize state ONLY on first mount (when empty)
       if (Object.keys(pluginLayerStates).length === 0) {
-        console.log("Loading saved layer states:", initialStates);
+        console.log('Loading saved layer states:', initialStates);
         setPluginLayerStates(initialStates);
       }
 
       // Expose controls for SettingsPanel
       window.hamclockLayerControls = {
-        layers: availableLayers.map((l) => ({
+        layers: availableLayers.map(l => ({
           ...l,
-          enabled:
-            pluginLayerStates[l.id]?.enabled ??
-            initialStates[l.id]?.enabled ??
-            l.defaultEnabled,
-          opacity:
-            pluginLayerStates[l.id]?.opacity ??
-            initialStates[l.id]?.opacity ??
-            l.defaultOpacity,
-          config:
-            pluginLayerStates[l.id]?.config ??
-            initialStates[l.id]?.config ??
-            l.config,
+          enabled: pluginLayerStates[l.id]?.enabled ?? initialStates[l.id]?.enabled ?? l.defaultEnabled,
+          opacity: pluginLayerStates[l.id]?.opacity ?? initialStates[l.id]?.opacity ?? l.defaultOpacity,
+          config: pluginLayerStates[l.id]?.config ?? initialStates[l.id]?.config ?? l.config
         })),
 
         toggleLayer: (id, enabled) => {
           const settings = getStoredMapSettings();
           const layers = settings.layers || {};
           layers[id] = { ...(layers[id] || {}), enabled };
-          localStorage.setItem(
-            "openhamclock_mapSettings",
-            JSON.stringify({ ...settings, layers }),
-          );
-          setPluginLayerStates((prev) => ({
-            ...prev,
-            [id]: { ...prev[id], enabled },
-          }));
+          localStorage.setItem('openhamclock_mapSettings', JSON.stringify({ ...settings, layers }));
+          setPluginLayerStates(prev => ({ ...prev, [id]: { ...prev[id], enabled } }));
         },
 
         setOpacity: (id, opacity) => {
           const settings = getStoredMapSettings();
           const layers = settings.layers || {};
           layers[id] = { ...(layers[id] || {}), opacity };
-          localStorage.setItem(
-            "openhamclock_mapSettings",
-            JSON.stringify({ ...settings, layers }),
-          );
-          setPluginLayerStates((prev) => ({
-            ...prev,
-            [id]: { ...prev[id], opacity },
-          }));
+          localStorage.setItem('openhamclock_mapSettings', JSON.stringify({ ...settings, layers }));
+          setPluginLayerStates(prev => ({ ...prev, [id]: { ...prev[id], opacity } }));
         },
 
         updateLayerConfig: (id, configDelta) => {
@@ -1332,25 +1482,20 @@ export const WorldMap = ({
 
           layers[id] = {
             ...currentLayer,
-            config: { ...(currentLayer.config || {}), ...configDelta },
+            config: { ...(currentLayer.config || {}), ...configDelta }
           };
 
-          localStorage.setItem(
-            "openhamclock_mapSettings",
-            JSON.stringify({ ...settings, layers }),
-          );
+          localStorage.setItem('openhamclock_mapSettings', JSON.stringify({ ...settings, layers }));
 
-          setPluginLayerStates((prev) => ({
+          setPluginLayerStates(prev => ({
             ...prev,
-            [id]: {
-              ...prev[id],
-              config: { ...(prev[id]?.config || {}), ...configDelta },
-            },
+            [id]: { ...prev[id], config: { ...(prev[id]?.config || {}), ...configDelta } }
           }));
-        },
+        }
       };
+
     } catch (err) {
-      console.error("Plugin system error:", err);
+      console.error('Plugin system error:', err);
     }
   }, [pluginLayerStates, integrationsRev]);
 
@@ -1359,24 +1504,16 @@ export const WorldMap = ({
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
 
-    pskMarkersRef.current.forEach((m) => map.removeLayer(m));
+    pskMarkersRef.current.forEach(m => map.removeLayer(m));
     pskMarkersRef.current = [];
 
     // Validate deLocation exists and has valid coordinates
-    const hasValidDE =
-      deLocation &&
-      typeof deLocation.lat === "number" &&
-      !isNaN(deLocation.lat) &&
-      typeof deLocation.lon === "number" &&
-      !isNaN(deLocation.lon);
+    const hasValidDE = deLocation &&
+      typeof deLocation.lat === 'number' && !isNaN(deLocation.lat) &&
+      typeof deLocation.lon === 'number' && !isNaN(deLocation.lon);
 
-    if (
-      showPSKReporter &&
-      pskReporterSpots &&
-      pskReporterSpots.length > 0 &&
-      hasValidDE
-    ) {
-      pskReporterSpots.forEach((spot) => {
+    if (showPSKReporter && pskReporterSpots && pskReporterSpots.length > 0 && hasValidDE) {
+      pskReporterSpots.forEach(spot => {
         // Validate spot coordinates are valid numbers
         let spotLat = parseFloat(spot.lat);
         let spotLon = parseFloat(spot.lon);
@@ -1384,41 +1521,28 @@ export const WorldMap = ({
         if (!isNaN(spotLat) && !isNaN(spotLon)) {
           // For TX spots (you transmitted → someone received): show the receiver (remote station)
           // For RX spots (someone transmitted → you received): show the sender (remote station)
-          const displayCall =
-            spot.direction === "rx"
-              ? spot.sender
-              : spot.receiver || spot.sender;
-          const dirLabel = spot.direction === "rx" ? "RX" : "TX";
-          const freqMHz =
-            spot.freqMHz ||
-            (spot.freq ? (spot.freq / 1000000).toFixed(3) : "?");
+          const displayCall = spot.direction === 'rx' ? spot.sender : (spot.receiver || spot.sender);
+          const dirLabel = spot.direction === 'rx' ? 'RX' : 'TX';
+          const freqMHz = spot.freqMHz || (spot.freq ? (spot.freq / 1000000).toFixed(3) : '?');
           const bandColor = getBandColor(parseFloat(freqMHz));
 
           try {
             // Draw line from DE to spot location
             const points = getGreatCirclePoints(
-              deLocation.lat,
-              deLocation.lon,
-              spotLat,
-              spotLon,
-              50,
+              deLocation.lat, deLocation.lon,
+              spotLat, spotLon,
+              50
             );
 
             // Render polyline on all 3 world copies
-            if (
-              points &&
-              Array.isArray(points) &&
-              points.length > 1 &&
-              points.every(
-                (p) => Array.isArray(p) && !isNaN(p[0]) && !isNaN(p[1]),
-              )
-            ) {
-              replicatePath(points).forEach((copy) => {
+            if (points && Array.isArray(points) && points.length > 1 &&
+              points.every(p => Array.isArray(p) && !isNaN(p[0]) && !isNaN(p[1]))) {
+              replicatePath(points).forEach(copy => {
                 const line = L.polyline(copy, {
                   color: bandColor,
                   weight: 1.5,
                   opacity: 0.5,
-                  dashArray: "4, 4",
+                  dashArray: '4, 4'
                 }).addTo(map);
                 pskMarkersRef.current.push(line);
               });
@@ -1429,59 +1553,48 @@ export const WorldMap = ({
               const circle = L.circleMarker([rLat, rLon], {
                 radius: 4,
                 fillColor: bandColor,
-                color: "#fff",
+                color: '#fff',
                 weight: 1,
                 opacity: 0.9,
-                fillOpacity: 0.8,
-              })
-                .bindPopup(
-                  `
+                fillOpacity: 0.8
+              }).bindPopup(`
                 <b data-qrz-call="${esc(displayCall)}" style="cursor:pointer">${esc(displayCall)}</b> <span style="color:#888;font-size:10px">${dirLabel}</span><br>
                 ${esc(spot.mode)} @ ${esc(freqMHz)} MHz<br>
-                ${spot.snr !== null ? `SNR: ${spot.snr > 0 ? "+" : ""}${spot.snr} dB` : ""}
-              `,
-                )
-                .addTo(map);
-
+                ${spot.snr !== null ? `SNR: ${spot.snr > 0 ? '+' : ''}${spot.snr} dB` : ''}
+              `).addTo(map);
               if (onSpotClick) {
-                circle.on("click", () => onSpotClick(spot));
+                circle.on('click', () => onSpotClick(spot));
               }
 
               pskMarkersRef.current.push(circle);
             });
           } catch (err) {
-            console.warn("Error rendering PSKReporter spot:", err);
+            console.warn('Error rendering PSKReporter spot:', err);
           }
         }
       });
     }
-  }, [pskReporterSpots, showPSKReporter, deLocation, bandColorVersion]);
+  }, [pskReporterSpots, showPSKReporter, deLocation]);
 
   // Update WSJT-X markers (CQ callers with grid locators)
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
 
-    wsjtxMarkersRef.current.forEach((m) => map.removeLayer(m));
+    wsjtxMarkersRef.current.forEach(m => map.removeLayer(m));
     wsjtxMarkersRef.current = [];
 
-    const hasValidDE =
-      deLocation &&
-      typeof deLocation.lat === "number" &&
-      !isNaN(deLocation.lat) &&
-      typeof deLocation.lon === "number" &&
-      !isNaN(deLocation.lon);
+    const hasValidDE = deLocation &&
+      typeof deLocation.lat === 'number' && !isNaN(deLocation.lat) &&
+      typeof deLocation.lon === 'number' && !isNaN(deLocation.lon);
 
     if (showWSJTX && wsjtxSpots && wsjtxSpots.length > 0 && hasValidDE) {
       // Deduplicate by callsign - keep most recent
       // For CQ: caller is the station. For QSO: dxCall is the remote station.
       const seen = new Map();
-      wsjtxSpots.forEach((spot) => {
-        const call = spot.caller || spot.dxCall || "";
-        if (
-          call &&
-          (!seen.has(call) || spot.timestamp > seen.get(call).timestamp)
-        ) {
+      wsjtxSpots.forEach(spot => {
+        const call = spot.caller || spot.dxCall || '';
+        if (call && (!seen.has(call) || spot.timestamp > seen.get(call).timestamp)) {
           seen.set(call, spot);
         }
       });
@@ -1491,36 +1604,28 @@ export const WorldMap = ({
         let spotLon = parseFloat(spot.lon);
 
         if (!isNaN(spotLat) && !isNaN(spotLon)) {
-          const freqMHz = spot.dialFrequency ? spot.dialFrequency / 1000000 : 0;
-          const bandColor = freqMHz ? getBandColor(freqMHz) : "#a78bfa";
+          const freqMHz = spot.dialFrequency ? (spot.dialFrequency / 1000000) : 0;
+          const bandColor = freqMHz ? getBandColor(freqMHz) : '#a78bfa';
           // Prefix-estimated locations get reduced opacity
-          const isEstimated = spot.gridSource === "prefix";
+          const isEstimated = spot.gridSource === 'prefix';
 
           try {
             // Draw line from DE to decoded station
             const points = getGreatCirclePoints(
-              deLocation.lat,
-              deLocation.lon,
-              spotLat,
-              spotLon,
-              50,
+              deLocation.lat, deLocation.lon,
+              spotLat, spotLon,
+              50
             );
 
-            if (
-              points &&
-              Array.isArray(points) &&
-              points.length > 1 &&
-              points.every(
-                (p) => Array.isArray(p) && !isNaN(p[0]) && !isNaN(p[1]),
-              )
-            ) {
+            if (points && Array.isArray(points) && points.length > 1 &&
+              points.every(p => Array.isArray(p) && !isNaN(p[0]) && !isNaN(p[1]))) {
               // Render polyline on all 3 world copies
-              replicatePath(points).forEach((copy) => {
+              replicatePath(points).forEach(copy => {
                 const line = L.polyline(copy, {
-                  color: "#a78bfa",
+                  color: '#a78bfa',
                   weight: 1.5,
                   opacity: isEstimated ? 0.15 : 0.4,
-                  dashArray: "2, 6",
+                  dashArray: '2, 6'
                 }).addTo(map);
                 wsjtxMarkersRef.current.push(line);
               });
@@ -1530,29 +1635,24 @@ export const WorldMap = ({
             replicatePoint(spotLat, spotLon).forEach(([rLat, rLon]) => {
               const diamond = L.marker([rLat, rLon], {
                 icon: L.divIcon({
-                  className: "",
+                  className: '',
                   html: `<div style="
                     width: 8px; height: 8px;
                     background: ${bandColor};
-                    border: 1px solid ${isEstimated ? "#888" : "#fff"};
+                    border: 1px solid ${isEstimated ? '#888' : '#fff'};
                     transform: rotate(45deg);
                     opacity: ${isEstimated ? 0.5 : 0.9};
                   "></div>`,
                   iconSize: [8, 8],
-                  iconAnchor: [4, 4],
-                }),
-              })
-                .bindPopup(
-                  `
-                <b data-qrz-call="${esc(call)}" style="cursor:pointer">${esc(call)}</b> ${spot.type === "CQ" ? "CQ" : ""}<br>
-                ${esc(spot.grid || "")} ${esc(spot.band || "")}${spot.gridSource === "prefix" ? " <i>(est)</i>" : spot.gridSource === "cache" ? " <i>(prev)</i>" : ""}<br>
-                ${esc(spot.mode || "")} SNR: ${spot.snr != null ? (spot.snr >= 0 ? "+" : "") + spot.snr : "?"} dB
-              `,
-                )
-                .addTo(map);
-
+                  iconAnchor: [4, 4]
+                })
+              }).bindPopup(`
+                <b data-qrz-call="${esc(call)}" style="cursor:pointer">${esc(call)}</b> ${spot.type === 'CQ' ? 'CQ' : ''}<br>
+                ${esc(spot.grid || '')} ${esc(spot.band || '')}${spot.gridSource === 'prefix' ? ' <i>(est)</i>' : spot.gridSource === 'cache' ? ' <i>(prev)</i>' : ''}<br>
+                ${esc(spot.mode || '')} SNR: ${spot.snr != null ? (spot.snr >= 0 ? '+' : '') + spot.snr : '?'} dB
+              `).addTo(map);
               if (onSpotClick) {
-                diamond.on("click", () => onSpotClick(spot));
+                diamond.on('click', () => onSpotClick(spot));
               }
 
               wsjtxMarkersRef.current.push(diamond);
@@ -1563,39 +1663,12 @@ export const WorldMap = ({
         }
       });
     }
-  }, [wsjtxSpots, showWSJTX, deLocation, bandColorVersion]);
-
-  const openBandColorEditor = (band) => {
-    setEditingBand(band);
-    setEditingColor(getBandColorForBand(band, effectiveBandColors));
-  };
-
-  const saveBandColor = () => {
-    if (!editingBand) return;
-    const next = { ...bandColorOverrides, [editingBand]: editingColor };
-    setBandColorOverrides(next);
-    saveBandColorOverrides(next);
-  };
-
-  const resetBandColor = () => {
-    if (!editingBand) return;
-    const next = { ...bandColorOverrides };
-    delete next[editingBand];
-    setBandColorOverrides(next);
-    setEditingColor(getBandColorForBand(editingBand));
-    saveBandColorOverrides(next);
-  };
-
-  const resetAllBandColors = () => {
-    setBandColorOverrides({});
-    setEditingBand(null);
-    saveBandColorOverrides({});
-  };
+  }, [wsjtxSpots, showWSJTX, deLocation]);
 
   return (
-    <div style={{ position: "relative", height: "100%", minHeight: "200px" }}>
+    <div style={{ position: 'relative', height: '100%', minHeight: '200px' }}>
       {/* Azimuthal equidistant projection (canvas-based) */}
-      {mapStyle === "azimuthal" && (
+      {mapStyle === 'azimuthal' && (
         <AzimuthalMap
           deLocation={deLocation}
           dxLocation={dxLocation}
@@ -1621,157 +1694,120 @@ export const WorldMap = ({
         />
       )}
 
-      <div
-        ref={mapRef}
-        style={{
-          height: "100%",
-          width: "100%",
-          borderRadius: "8px",
-          background: mapStyle === "countries" ? "#4a90d9" : undefined,
-          display: mapStyle === "azimuthal" ? "none" : undefined,
-        }}
-      />
+      {/* Leaflet map (hidden when azimuthal is active) */}
+      <div ref={mapRef} style={{ height: '100%', width: '100%', borderRadius: '8px', background: mapStyle === 'countries' ? '#4a90d9' : undefined, display: mapStyle === 'azimuthal' ? 'none' : undefined }} />
 
       {/* Render all plugin layers (Leaflet only) */}
-      {mapStyle !== "azimuthal" &&
-        mapInstanceRef.current &&
-        getAllLayers().map((layerDef) => (
-          <PluginLayer
-            key={layerDef.id}
-            plugin={layerDef}
-            enabled={
-              pluginLayerStates[layerDef.id]?.enabled ?? layerDef.defaultEnabled
-            }
-            opacity={
-              pluginLayerStates[layerDef.id]?.opacity ?? layerDef.defaultOpacity
-            }
-            config={pluginLayerStates[layerDef.id]?.config ?? layerDef.config}
-            map={mapInstanceRef.current}
-            satellites={satellites}
-            units={units}
-            callsign={callsign}
-            locator={deLocator}
-            lowMemoryMode={lowMemoryMode}
-          />
-        ))}
+      {mapStyle !== 'azimuthal' && mapInstanceRef.current && getAllLayers().map(layerDef => (
+        <PluginLayer
+          key={layerDef.id}
+          plugin={layerDef}
+          enabled={pluginLayerStates[layerDef.id]?.enabled ?? layerDef.defaultEnabled}
+          opacity={pluginLayerStates[layerDef.id]?.opacity ?? layerDef.defaultOpacity}
+          config={pluginLayerStates[layerDef.id]?.config ?? layerDef.config}
+          map={mapInstanceRef.current}
+          satellites={satellites}
+          units={units}
+          callsign={callsign}
+          locator={deLocator}
+          lowMemoryMode={lowMemoryMode}
+        />
+      ))}
 
       {/* MODIS Control (Only shows when MODIS map style is active) */}
 
       {/* Map lock toggle — below Leaflet zoom controls (Leaflet only) */}
-      {mapStyle !== "azimuthal" && (
-        <button
-          onClick={() => setMapLocked((prev) => !prev)}
-          title={
-            mapLocked
-              ? "Unlock map (enable panning/zooming)"
-              : "Lock map (prevent accidental panning/zooming)"
-          }
-          style={{
-            position: "absolute",
-            top: "72px",
-            left: "10px",
-            width: "30px",
-            height: "30px",
-            background: mapLocked
-              ? "rgba(255, 80, 80, 0.25)"
-              : "rgba(0, 0, 0, 0.6)",
-            border: `2px solid ${mapLocked ? "rgba(255, 80, 80, 0.7)" : "rgba(0,0,0,0.3)"}`,
-            borderRadius: "4px",
-            color: mapLocked ? "#ff5050" : "#ccc",
-            fontSize: "14px",
-            cursor: "pointer",
-            zIndex: 1000,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            lineHeight: 1,
-          }}
-        >
-          {mapLocked ? "🔒" : "🔓"}
-        </button>
-      )}
+      {mapStyle !== 'azimuthal' && <button
+        onClick={() => setMapLocked(prev => !prev)}
+        title={mapLocked ? 'Unlock map (enable panning/zooming)' : 'Lock map (prevent accidental panning/zooming)'}
+        style={{
+          position: 'absolute',
+          top: '72px',
+          left: '10px',
+          width: '30px',
+          height: '30px',
+          background: mapLocked ? 'rgba(255, 80, 80, 0.25)' : 'rgba(0, 0, 0, 0.6)',
+          border: `2px solid ${mapLocked ? 'rgba(255, 80, 80, 0.7)' : 'rgba(0,0,0,0.3)'}`,
+          borderRadius: '4px',
+          color: mapLocked ? '#ff5050' : '#ccc',
+          fontSize: '14px',
+          cursor: 'pointer',
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          lineHeight: 1
+        }}
+      >
+        {mapLocked ? '🔒' : '🔓'}
+      </button>}
 
       {/* Night darkness slider (Leaflet only) */}
-      {mapStyle !== "azimuthal" && (
-        <div
-          title="Adjust night overlay darkness"
+      {mapStyle !== 'azimuthal' && <div
+        title="Adjust night overlay darkness"
+        style={{
+          position: 'absolute',
+          top: '108px',
+          left: '10px',
+          background: 'rgba(0, 0, 0, 0.7)',
+          border: '1px solid #444',
+          borderRadius: '4px',
+          padding: '6px 8px',
+          zIndex: 1000,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '3px',
+          width: '30px',
+        }}
+      >
+        <span style={{ fontSize: '12px', lineHeight: 1 }}>🌙</span>
+        <input
+          type="range"
+          min="0"
+          max="90"
+          value={nightDarkness}
+          onChange={(e) => setNightDarkness(parseInt(e.target.value))}
           style={{
-            position: "absolute",
-            top: "108px",
-            left: "10px",
-            background: "rgba(0, 0, 0, 0.7)",
-            border: "1px solid #444",
-            borderRadius: "4px",
-            padding: "6px 8px",
-            zIndex: 1000,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: "3px",
-            width: "30px",
+            cursor: 'pointer',
+            width: '80px',
+            transform: 'rotate(-90deg)',
+            transformOrigin: 'center center',
+            margin: '32px 0',
           }}
-        >
-          <span style={{ fontSize: "12px", lineHeight: 1 }}>🌙</span>
-          <input
-            type="range"
-            min="0"
-            max="90"
-            value={nightDarkness}
-            onChange={(e) => setNightDarkness(parseInt(e.target.value))}
-            style={{
-              cursor: "pointer",
-              width: "80px",
-              transform: "rotate(-90deg)",
-              transformOrigin: "center center",
-              margin: "32px 0",
-            }}
-          />
-          <span
-            style={{
-              fontSize: "9px",
-              fontFamily: "JetBrains Mono, monospace",
-              color: "#999",
-              lineHeight: 1,
-            }}
-          >
-            {nightDarkness}%
-          </span>
-        </div>
-      )}
+        />
+        <span style={{
+          fontSize: '9px',
+          fontFamily: 'JetBrains Mono, monospace',
+          color: '#999',
+          lineHeight: 1,
+        }}>
+          {nightDarkness}%
+        </span>
+      </div>}
 
-      {mapStyle === "MODIS" && (
-        <div
-          style={{
-            position: "absolute",
-            top: "50px",
-            right: "10px",
-            background: "rgba(0, 0, 0, 0.8)",
-            border: "1px solid #444",
-            padding: "8px",
-            borderRadius: "4px",
-            zIndex: 1000,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: "10px",
-          }}
-        >
-          <div
-            style={{
-              color: "#00ffcc",
-              fontSize: "10px",
-              fontFamily: "JetBrains Mono",
-            }}
-          >
-            {gibsOffset === 0 ? "LATEST IMAGERY" : `${gibsOffset} DAYS AGO`}
+      {mapStyle === 'MODIS' && (
+        <div style={{
+          position: 'absolute',
+          top: '50px',
+          right: '10px',
+          background: 'rgba(0, 0, 0, 0.8)',
+          border: '1px solid #444',
+          padding: '8px',
+          borderRadius: '4px',
+          zIndex: 1000,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '10px'
+        }}>
+          <div style={{ color: '#00ffcc', fontSize: '10px', fontFamily: 'JetBrains Mono' }}>
+            {gibsOffset === 0 ? 'LATEST IMAGERY' : `${gibsOffset} DAYS AGO`}
           </div>
           <input
-            type="range"
-            min="0"
-            max="7"
-            value={gibsOffset}
+            type="range" min="0" max="7" value={gibsOffset}
             onChange={(e) => setGibsOffset(parseInt(e.target.value))}
-            style={{ cursor: "pointer", width: "100px" }}
+            style={{ cursor: 'pointer', width: '100px' }}
           />
         </div>
       )}
@@ -1781,300 +1817,120 @@ export const WorldMap = ({
         value={mapStyle}
         onChange={(e) => setMapStyle(e.target.value)}
         style={{
-          position: "absolute",
-          top: "10px",
-          right: "10px",
-          background: "rgba(0, 0, 0, 0.8)",
-          border: "1px solid #444",
-          color: "#00ffcc",
-          padding: "6px 10px",
-          borderRadius: "4px",
-          fontSize: "11px",
-          fontFamily: "JetBrains Mono",
-          cursor: "pointer",
+          position: 'absolute',
+          top: '10px',
+          right: '10px',
+          background: 'rgba(0, 0, 0, 0.8)',
+          border: '1px solid #444',
+          color: '#00ffcc',
+          padding: '6px 10px',
+          borderRadius: '4px',
+          fontSize: '11px',
+          fontFamily: 'JetBrains Mono',
+          cursor: 'pointer',
           zIndex: 1000,
-          outline: "none",
+          outline: 'none'
         }}
       >
         {Object.entries(MAP_STYLES).map(([key, style]) => (
-          <option key={key} value={key}>
-            {style.name}
-          </option>
+          <option key={key} value={key}>{style.name}</option>
         ))}
       </select>
 
       {/* Satellite toggle */}
 
-      {/* Labels toggle */}
-      {onToggleDXLabels &&
-        showDXPaths &&
-        Array.isArray(dxPaths) &&
-        dxPaths.length > 0 && (
-          <button
-            onClick={onToggleDXLabels}
-            title={
-              showDXLabels
-                ? "Hide callsign labels on map"
-                : "Show callsign labels on map"
-            }
-            style={{
-              position: "absolute",
-              top: "10px",
-              left: "50px",
-              background: showDXLabels
-                ? "rgba(255, 170, 0, 0.2)"
-                : "rgba(0, 0, 0, 0.8)",
-              border: `1px solid ${showDXLabels ? "#ffaa00" : "#666"}`,
-              color: showDXLabels ? "#ffaa00" : "#888",
-              padding: "6px 10px",
-              borderRadius: "4px",
-              fontSize: "11px",
-              fontFamily: "JetBrains Mono",
-              cursor: "pointer",
-              zIndex: 1000,
-            }}
-          >
-            ⊞ CALLS {showDXLabels ? "ON" : "OFF"}
-          </button>
-        )}
 
+      {/* Labels toggle */}
+      {onToggleDXLabels && showDXPaths && Array.isArray(dxPaths) && dxPaths.length > 0 && (
+        <button
+          onClick={onToggleDXLabels}
+          title={showDXLabels ? 'Hide callsign labels on map' : 'Show callsign labels on map'}
+          style={{
+            position: 'absolute',
+            top: '10px',
+            left: '50px',
+            background: showDXLabels ? 'rgba(255, 170, 0, 0.2)' : 'rgba(0, 0, 0, 0.8)',
+            border: `1px solid ${showDXLabels ? '#ffaa00' : '#666'}`,
+            color: showDXLabels ? '#ffaa00' : '#888',
+            padding: '6px 10px',
+            borderRadius: '4px',
+            fontSize: '11px',
+            fontFamily: 'JetBrains Mono',
+            cursor: 'pointer',
+            zIndex: 1000
+          }}
+        >
+          ⊞ CALLS {showDXLabels ? 'ON' : 'OFF'}
+        </button>
+      )}
+      {/* Callsign Weather Overlay */}
+      {!hideOverlays && dxWeatherBuildEnabled && (
+        <CallsignWeatherOverlay
+          hoveredSpot={hoveredSpot}
+          enabled={dxWeatherAllowed}
+          units={units}
+        />
+      )}
       {/* DX News Ticker - left side of bottom bar */}
       {!hideOverlays && showDXNews && <DXNewsTicker />}
 
       {/* Legend - centered above news ticker */}
       {!hideOverlays && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: "44px",
-            left: "50%",
-            transform: "translateX(-50%)",
-            background: "rgba(0, 0, 0, 0.85)",
-            border: "1px solid #444",
-            borderRadius: "6px",
-            padding: "6px 10px",
-            zIndex: 1000,
-            display: "flex",
-            gap: "8px",
-            alignItems: "center",
-            fontSize: "11px",
-            fontFamily: "JetBrains Mono, monospace",
-            flexWrap: "nowrap",
-          }}
-        >
+        <div style={{
+          position: 'absolute',
+          bottom: '44px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(0, 0, 0, 0.85)',
+          border: '1px solid #444',
+          borderRadius: '6px',
+          padding: '6px 10px',
+          zIndex: 1000,
+          display: 'flex',
+          gap: '8px',
+          alignItems: 'center',
+          fontSize: '11px',
+          fontFamily: 'JetBrains Mono, monospace',
+          flexWrap: 'nowrap'
+        }}>
           {showDXPaths && (
-            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              <span style={{ color: "#888" }}>DX:</span>
-              {BAND_LEGEND_ORDER.map((band) => {
-                const bg = getBandColorForBand(band, effectiveBandColors);
-                const fg = getBandTextColor(bg);
-                const isActive = editingBand === band;
-                return (
-                  <button
-                    key={band}
-                    type="button"
-                    onClick={() => openBandColorEditor(band)}
-                    title={`Edit color for ${band}`}
-                    style={{
-                      background: bg,
-                      color: fg,
-                      padding: "2px 5px",
-                      borderRadius: "3px",
-                      fontWeight: "600",
-                      border: isActive
-                        ? "2px solid #ffffff"
-                        : "1px solid rgba(0,0,0,0.35)",
-                      cursor: "pointer",
-                      lineHeight: 1.1,
-                    }}
-                  >
-                    {band}
-                  </button>
-                );
-              })}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span style={{ color: '#888' }}>DX:</span>
+              <span style={{ background: '#ff6666', color: '#000', padding: '2px 5px', borderRadius: '3px', fontWeight: '600' }}>160m</span>
+              <span style={{ background: '#ff9966', color: '#000', padding: '2px 5px', borderRadius: '3px', fontWeight: '600' }}>80m</span>
+              <span style={{ background: '#ffcc66', color: '#000', padding: '2px 5px', borderRadius: '3px', fontWeight: '600' }}>40m</span>
+              <span style={{ background: '#ccff66', color: '#000', padding: '2px 5px', borderRadius: '3px', fontWeight: '600' }}>30m</span>
+              <span style={{ background: '#66ff99', color: '#000', padding: '2px 5px', borderRadius: '3px', fontWeight: '600' }}>20m</span>
+              <span style={{ background: '#66ffcc', color: '#000', padding: '2px 5px', borderRadius: '3px', fontWeight: '600' }}>17m</span>
+              <span style={{ background: '#66ccff', color: '#000', padding: '2px 5px', borderRadius: '3px', fontWeight: '600' }}>15m</span>
+              <span style={{ background: '#6699ff', color: '#000', padding: '2px 5px', borderRadius: '3px', fontWeight: '600' }}>12m</span>
+              <span style={{ background: '#9966ff', color: '#fff', padding: '2px 5px', borderRadius: '3px', fontWeight: '600' }}>10m</span>
+              <span style={{ background: '#cc66ff', color: '#fff', padding: '2px 5px', borderRadius: '3px', fontWeight: '600' }}>6m</span>
             </div>
           )}
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <span
-              style={{
-                background: "var(--accent-amber)",
-                color: "#000",
-                padding: "2px 5px",
-                borderRadius: "3px",
-                fontWeight: "600",
-              }}
-            >
-              ●&nbsp;DE
-            </span>
-            <span
-              style={{
-                background: "#00aaff",
-                color: "#000",
-                padding: "2px 5px",
-                borderRadius: "3px",
-                fontWeight: "600",
-              }}
-            >
-              ●&nbsp;DX
-            </span>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <span style={{ background: 'var(--accent-amber)', color: '#000', padding: '2px 5px', borderRadius: '3px', fontWeight: '600' }}>● DE</span>
+            <span style={{ background: '#00aaff', color: '#000', padding: '2px 5px', borderRadius: '3px', fontWeight: '600' }}>● DX</span>
           </div>
           {showPOTA && (
-            <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-              <span
-                style={{
-                  background: "#44cc44",
-                  color: "#000",
-                  padding: "2px 5px",
-                  borderRadius: "3px",
-                  fontWeight: "600",
-                }}
-              >
-                ▲&nbsp;POTA
-              </span>
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+              <span style={{ background: '#44cc44', color: '#000', padding: '2px 5px', borderRadius: '3px', fontWeight: '600' }}>▲ POTA</span>
             </div>
           )}
           {showWWFF && (
-            <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-              <span
-                style={{
-                  background: "#a3f3a3",
-                  color: "#000",
-                  padding: "2px 5px",
-                  borderRadius: "3px",
-                  fontWeight: "600",
-                }}
-              >
-                ▼ WWFF
-              </span>
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+              <span style={{ background: '#a3f3a3', color: '#000', padding: '2px 5px', borderRadius: '3px', fontWeight: '600' }}>▼ WWFF</span>
             </div>
           )}
           {showSOTA && (
-            <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-              <span
-                style={{
-                  background: "#ff9632",
-                  color: "#000",
-                  padding: "2px 5px",
-                  borderRadius: "3px",
-                  fontWeight: "600",
-                }}
-              >
-                ◆&nbsp;SOTA
-              </span>
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+              <span style={{ background: '#ff9632', color: '#000', padding: '2px 5px', borderRadius: '3px', fontWeight: '600' }}>◆ SOTA</span>
             </div>
           )}
-          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-            <span style={{ color: "#ffcc00" }}>
-              ☼&nbsp;{t("app.legend.sun")}
-            </span>
-            <span style={{ color: "#aaaaaa" }}>
-              ☽&nbsp;{t("app.legend.moon")}
-            </span>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            <span style={{ color: '#ffcc00' }}>☼ Sun</span>
+            <span style={{ color: '#aaaaaa' }}>☽ Moon</span>
           </div>
-        </div>
-      )}
-      {!hideOverlays && editingBand && (
-        <div
-          style={{
-            position: "absolute",
-            left: "50%",
-            bottom: "92px",
-            transform: "translateX(-50%)",
-            background: "rgba(0, 0, 0, 0.92)",
-            border: "1px solid #555",
-            borderRadius: "6px",
-            padding: "8px",
-            zIndex: 1001,
-            display: "flex",
-            alignItems: "center",
-            gap: "6px",
-            fontFamily: "JetBrains Mono, monospace",
-            fontSize: "11px",
-          }}
-        >
-          <span style={{ color: "#bbb" }}>{editingBand}</span>
-          <input
-            type="color"
-            value={editingColor}
-            onChange={(e) => setEditingColor(e.target.value)}
-            style={{
-              width: "26px",
-              height: "20px",
-              padding: 0,
-              border: "1px solid #444",
-              background: "transparent",
-              cursor: "pointer",
-            }}
-          />
-          <span
-            style={{
-              width: "80px",
-              background: "#111",
-              color: "#ddd",
-              border: "1px solid #444",
-              borderRadius: "3px",
-              padding: "2px 5px",
-              fontFamily: "JetBrains Mono, monospace",
-            }}
-          >
-            {editingColor}
-          </span>
-          <button
-            type="button"
-            onClick={saveBandColor}
-            style={{
-              background: "#1f6d35",
-              color: "#d2ffd8",
-              border: "1px solid #3da15d",
-              borderRadius: "4px",
-              padding: "3px 7px",
-              cursor: "pointer",
-            }}
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            onClick={resetBandColor}
-            style={{
-              background: "#6f3f0f",
-              color: "#ffd7b0",
-              border: "1px solid #a76a2d",
-              borderRadius: "4px",
-              padding: "3px 7px",
-              cursor: "pointer",
-            }}
-          >
-            Reset
-          </button>
-          <button
-            type="button"
-            onClick={resetAllBandColors}
-            style={{
-              background: "#5b1d1d",
-              color: "#ffc1c1",
-              border: "1px solid #9a3d3d",
-              borderRadius: "4px",
-              padding: "3px 7px",
-              cursor: "pointer",
-            }}
-          >
-            Reset All
-          </button>
-          <button
-            type="button"
-            onClick={() => setEditingBand(null)}
-            style={{
-              background: "#222",
-              color: "#ddd",
-              border: "1px solid #555",
-              borderRadius: "4px",
-              padding: "3px 7px",
-              cursor: "pointer",
-            }}
-          >
-            Close
-          </button>
         </div>
       )}
       <style>{`
