@@ -237,19 +237,24 @@ export const RigProvider = ({ children, rigConfig }) => {
         // console.log(`[RigContext] Tuning to ${hz} Hz`);
         setFreq(hz);
 
-        // Determine mode: Use input if valid, otherwise auto-calculate
-        let targetMode = modeInput || getModeFromFreq(hz);
+        // Only switch mode when autoMode is enabled (default: on).
+        // When off, only the frequency changes — the radio keeps its current mode.
+        if (rigConfig?.autoMode !== false) {
+          // Determine mode: use spot mode if provided, otherwise look up from band plan
+          let targetMode = modeInput || getModeFromFreq(hz);
 
-        // Map generic modes (FT8, CW) to rig-specific modes (DATA-USB, CW-LSB)
-        targetMode = mapModeToRig(targetMode, hz);
+          // Map generic modes (DATA, SSB) to rig-specific forms (DATA-USB, USB/LSB).
+          // CW passes through unchanged — rig-listener handles the radio-specific command.
+          targetMode = mapModeToRig(targetMode, hz);
 
-        if (targetMode && targetMode !== rigState.mode) {
-          // console.log(`[RigContext] Setting Mode to ${targetMode}`);
-          setMode(targetMode);
+          if (targetMode && targetMode !== rigState.mode) {
+            // console.log(`[RigContext] Setting Mode to ${targetMode}`);
+            setMode(targetMode);
+          }
         }
       }
     },
-    [rigState.mode, setFreq, setMode],
+    [rigState.mode, rigConfig, setFreq, setMode],
   );
 
   const value = {

@@ -40,6 +40,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
   const [rigHost, setRigHost] = useState(config?.rigControl?.host || 'http://localhost');
   const [rigPort, setRigPort] = useState(config?.rigControl?.port || 5555);
   const [tuneEnabled, setTuneEnabled] = useState(config?.rigControl?.tuneEnabled || false);
+  const [autoMode, setAutoMode] = useState(config?.rigControl?.autoMode !== false);
   const [satelliteSearch, setSatelliteSearch] = useState('');
   const isLocalInstall = useLocalInstall();
   const [rotatorEnabled, setRotatorEnabled] = useState(() => {
@@ -124,6 +125,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
       setRigHost(config.rigControl?.host || 'http://localhost');
       setRigPort(config.rigControl?.port || 5555);
       setTuneEnabled(config.rigControl?.tuneEnabled || false);
+      setAutoMode(config.rigControl?.autoMode !== false);
       if (config.location?.lat && config.location?.lon) {
         setGridSquare(calculateGridSquare(config.location.lat, config.location.lon));
       }
@@ -345,7 +347,7 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
       lowMemoryMode,
       units,
       propagation: { mode: propMode, power: parseFloat(propPower) || 100 },
-      rigControl: { enabled: rigEnabled, host: rigHost, port: parseInt(rigPort) || 5555, tuneEnabled }
+      rigControl: { enabled: rigEnabled, host: rigHost, port: parseInt(rigPort) || 5555, tuneEnabled, autoMode }
     });
     onClose();
   };
@@ -1091,6 +1093,23 @@ export const SettingsPanel = ({ isOpen, onClose, config, onSave, onResetLayout, 
                       </span>
                       <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                         {t('station.settings.rigControl.tuneEnabled.hint')}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={autoMode}
+                      onChange={(e) => setAutoMode(e.target.checked)}
+                      style={{ marginRight: '8px' }}
+                    />
+                    <div>
+                      <span style={{ color: 'var(--text-primary)', fontSize: '13px' }}>
+                        {t('station.settings.rigControl.autoMode')}
+                      </span>
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                        {t('station.settings.rigControl.autoMode.hint')}
                       </div>
                     </div>
                   </div>
