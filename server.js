@@ -1587,18 +1587,56 @@ async function hasDirtyWorkingTree() {
   return status.stdout.trim().length > 0;
 }
 
-function runUpdateScript() {
+function spawnPromise(cmd, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const scriptPath = path.join(__dirname, 'scripts', 'update.sh');
-    const child = spawn('bash', [scriptPath, '--auto'], {
-      cwd: __dirname,
-      stdio: 'inherit',
-    });
+    const child = spawn(cmd, args, { cwd: __dirname, stdio: 'inherit', ...options });
+    child.on('error', reject);
     child.on('exit', (code) => {
       if (code === 0) return resolve();
-      reject(new Error(`update.sh exited with code ${code}`));
+      reject(new Error(`${cmd} ${args.join(' ')} exited with code ${code}`));
     });
   });
+}
+
+async function runUpdateScript() {
+  const isWin = process.platform === 'win32';
+
+  // On Linux/macOS, use the full-featured bash script (handles Pi kiosk patches, etc.)
+  if (!isWin) {
+    const scriptPath = path.join(__dirname, 'scripts', 'update.sh');
+    return spawnPromise('bash', [scriptPath, '--auto']);
+  }
+
+  // On Windows, run update steps directly (bash is not available natively)
+  logInfo('[Auto Update] Running cross-platform update (Windows)');
+
+  const branch = await getDefaultBranch();
+  const npmCmd = isWin ? 'npm.cmd' : 'npm';
+
+  // 1. Pull latest (with fallback to hard reset)
+  try {
+    await spawnPromise('git', ['pull', 'origin', branch]);
+  } catch {
+    logWarn('[Auto Update] git pull failed — falling back to hard reset');
+    await execFilePromise('git', ['fetch', 'origin', '--prune'], { cwd: __dirname });
+    await execFilePromise('git', ['reset', '--hard', `origin/${branch}`], { cwd: __dirname });
+  }
+
+  // 2. Install dependencies
+  logInfo('[Auto Update] Installing dependencies...');
+  await spawnPromise(npmCmd, ['install', '--include=dev']);
+
+  // 3. Clean old build to prevent stale chunks
+  const distPath = path.join(__dirname, 'dist');
+  if (fs.existsSync(distPath)) {
+    fs.rmSync(distPath, { recursive: true, force: true });
+  }
+
+  // 4. Rebuild frontend
+  logInfo('[Auto Update] Building frontend...');
+  await spawnPromise(npmCmd, ['run', 'build']);
+
+  logInfo('[Auto Update] Windows update complete');
 }
 
 async function autoUpdateTick(trigger = 'interval', force = false) {
